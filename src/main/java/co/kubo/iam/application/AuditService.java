@@ -1,0 +1,90 @@
+package co.kubo.iam.application;
+
+import co.kubo.iam.domain.AuditLog;
+import co.kubo.iam.domain.repository.AuditLogRepository;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.stereotype.Service;
+
+/**
+ * Bitacora de auditoria con cadena de hash.
+ *
+ * <p>Cada entrada incluye el hash de la anterior. Verificar la cadena permite detectar
+ * manipulaciones posteriores de la base de datos.
+ */
+@Service
+public class AuditService {
+
+    private final AuditLogRepository repository;
+
+    public AuditService(AuditLogRepository repository) {
+        this.repository = repository;
+    }
+
+    public void record(
+            UUID tenantId,
+            UUID userId,
+            String action,
+            String entity,
+            String entityId,
+            String ip,
+            String userAgent) {
+        Instant now = Instant.now();
+        String previous = repository.findTopByOrderByCreatedAtDesc()
+                .map(AuditLog::getHash)
+                .orElse("GENESIS");
+        String hash = chainHash(previous, action, entityId, now);
+        repository.save(new AuditLog(
+                UUID.randomUUID(),
+                tenantId,
+                userId,
+                action,
+                entity,
+                entityId,
+                truncate(ip, 60),
+                truncate(userAgent, 240),
+                previous,
+                hash,
+                now));
+    }
+
+    public List<AuditLog> latest() {
+        return repository.findTop50ByOrderByCreatedAtDesc();
+    }
+
+    public boolean verifyChain(List<AuditLog> entriesOldestFirst) {
+        String expected = "GENESIS";
+        for (AuditLog entry : entriesOldestFirst) {
+            if (!expected.equals(entry.getPrevHash())) {
+                return false;
+            }
+            expected = entry.getHash();
+        }
+        return true;
+    }
+
+    private String chainHash(String previous, String action, String entityId, Instant timestamp) {
+        try {
+            String payload = String.join("|",
+                    previous,
+                    action,
+                    entityId == null ? "" : entityId,
+                    timestamp.toString());
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(payload.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception exception) {
+            throw new IllegalStateException("No fue posible calcular el hash de auditoria", exception);
+        }
+    }
+
+    private String truncate(String value, int max) {
+        if (value == null) {
+            return null;
+        }
+        return value.length() <= max ? value : value.substring(0, max);
+    }
+}

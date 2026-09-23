@@ -1,0 +1,55 @@
+server:
+  port: ${PORT:8081}
+  servlet:
+    context-path: /api/v1
+
+spring:
+  application:
+    name: kubo-iam
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/kubo_iam}
+    username: ${SPRING_DATASOURCE_USERNAME:kubo_iam}
+    password: ${SPRING_DATASOURCE_PASSWORD:kubo_iam_dev}
+    hikari:
+      maximum-pool-size: 8
+      minimum-idle: 2
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    default-property-inclusion: non_null
+
+kubo:
+  jwt:
+    issuer: kubo-iam
+    audience: kubo-api
+    access-token-minutes: ${KUBO_ACCESS_TOKEN_MINUTES:15}
+    refresh-token-days: ${KUBO_REFRESH_TOKEN_DAYS:7}
+    private-key-pem: ${KUBO_JWT_PRIVATE_KEY:}
+  seed:
+    enabled: ${KUBO_SEED_ENABLED:false}
+    admin-email: ${KUBO_ADMIN_EMAIL:admin@kubo.local}
+    admin-password: ${KUBO_ADMIN_PASSWORD:Admin123!}
+    tenant-name: ${KUBO_TENANT_NAME:Tienda La Esquina}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    root: INFO
+    co.kubo: INFO
