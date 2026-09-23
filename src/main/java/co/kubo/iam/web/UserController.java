@@ -45,4 +45,16 @@ public class UserController {
                         entry.getCreatedAt()))
                 .toList();
     }
+
+    /**
+     * Comprueba que la bitacora no haya sido manipulada.
+     *
+     * Verifica la ventana mas reciente: que cada entrada enlace con la anterior y
+     * que su hash corresponda al contenido. Devuelve `chainIntact: false` si
+     * alguien edito o borro un registro.
+     */
+    @GetMapping("/audit/verify")
+    public AuditService.AuditVerification verifyAudit() {
+        return auditService.verifyLatestWindow();
+    }
 }

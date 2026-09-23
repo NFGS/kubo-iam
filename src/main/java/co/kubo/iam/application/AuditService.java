@@ -5,11 +5,15 @@ import co.kubo.iam.domain.repository.AuditLogRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -54,7 +58,10 @@ public class AuditService {
                 Integer.class,
                 CHAIN_LOCK_KEY);
 
-        Instant now = Instant.now();
+        // Se trunca a microsegundos porque es la precision de PostgreSQL: si se
+        // guardara con nanosegundos, el valor leido de vuelta seria distinto y la
+        // verificacion de la cadena fallaria siempre.
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
         String previous = repository.findTopByOrderByCreatedAtDesc()
                 .map(AuditLog::getHash)
                 .orElse("GENESIS");
@@ -78,19 +85,87 @@ public class AuditService {
     }
 
     /**
-     * Verifica que cada entrada encadene con la anterior.
+     * Registra un evento que <b>debe sobrevivir</b> al fallo de la operacion.
+     *
+     * <p>Cuando un inicio de sesion falla, el servicio lanza una excepcion y su transaccion se
+     * revierte: si la auditoria se escribiera en esa misma transaccion, el intento fallido
+     * desapareceria de la bitacora — justo el evento que interesa para una investigacion. Esta
+     * variante abre su propia transaccion, de modo que el registro queda aunque la operacion
+     * de negocio falle.
+     *
+     * <p>Se usa solo en rutas de fallo: en las rutas exitosas la auditoria debe ser parte de la
+     * misma transaccion, para que no existan registros de acciones que finalmente no ocurrieron.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordIndependent(
+            UUID tenantId,
+            UUID userId,
+            String action,
+            String entity,
+            String entityId,
+            String ip,
+            String userAgent) {
+        record(tenantId, userId, action, entity, entityId, ip, userAgent);
+    }
+
+    /**
+     * Verifica la integridad de una ventana de la bitacora.
+     *
+     * <p>Para cada entrada comprueba dos cosas: que enlace con la anterior (nadie borro ni
+     * inserto un registro en medio) y que su hash corresponda al contenido (nadie edito la
+     * accion ni el identificador). Una edicion parcial rompe la verificacion; para falsificar
+     * la bitacora completa habria que recalcular toda la cadena.
      *
      * @param entriesOldestFirst entradas ordenadas de la mas antigua a la mas reciente
      */
     public boolean verifyChain(List<AuditLog> entriesOldestFirst) {
-        String expected = "GENESIS";
-        for (AuditLog entry : entriesOldestFirst) {
-            if (!expected.equals(entry.getPrevHash())) {
+        for (int index = 0; index < entriesOldestFirst.size(); index++) {
+            AuditLog entry = entriesOldestFirst.get(index);
+
+            if (index > 0) {
+                AuditLog previous = entriesOldestFirst.get(index - 1);
+                if (!previous.getHash().equals(entry.getPrevHash())) {
+                    return false;
+                }
+            }
+
+            String expected = chainHash(
+                    entry.getPrevHash(), entry.getAction(), entry.getEntityId(), entry.getCreatedAt());
+            if (!expected.equals(entry.getHash())) {
                 return false;
             }
-            expected = entry.getHash();
         }
         return true;
+    }
+
+    /**
+     * Verifica la ventana mas reciente de la bitacora.
+     *
+     * <p>Se limita a las ultimas entradas porque recorrer una bitacora de millones de filas en
+     * una peticion HTTP no es razonable; la verificacion completa es un trabajo por lotes.
+     * El resultado incluye el hash de la entrada mas antigua de la ventana para poder
+     * encadenarlo con una verificacion anterior.
+     */
+    @Transactional(readOnly = true)
+    public AuditVerification verifyLatestWindow() {
+        List<AuditLog> oldestFirst = new ArrayList<>(repository.findTop50ByOrderByCreatedAtDesc());
+        Collections.reverse(oldestFirst);
+
+        return new AuditVerification(
+                oldestFirst.size(),
+                verifyChain(oldestFirst),
+                oldestFirst.isEmpty() ? null : oldestFirst.get(0).getHash(),
+                oldestFirst.isEmpty() ? null : oldestFirst.get(oldestFirst.size() - 1).getHash(),
+                Instant.now().truncatedTo(ChronoUnit.MICROS));
+    }
+
+    /** Resultado de verificar la cadena de auditoria. */
+    public record AuditVerification(
+            int entriesChecked,
+            boolean chainIntact,
+            String oldestHash,
+            String newestHash,
+            Instant checkedAt) {
     }
 
     private String chainHash(String previous, String action, String entityId, Instant timestamp) {

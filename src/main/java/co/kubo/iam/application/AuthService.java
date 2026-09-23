@@ -37,6 +37,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
     private final AuditService auditService;
+    private final SecurityIncidentService securityIncidents;
     private final KuboProperties properties;
 
     public AuthService(
@@ -46,6 +47,7 @@ public class AuthService {
             PasswordEncoder passwordEncoder,
             TokenService tokenService,
             AuditService auditService,
+            SecurityIncidentService securityIncidents,
             KuboProperties properties) {
         this.users = users;
         this.tenants = tenants;
@@ -53,6 +55,7 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.auditService = auditService;
+        this.securityIncidents = securityIncidents;
         this.properties = properties;
     }
 
@@ -95,7 +98,9 @@ public class AuthService {
                         "INVALID_CREDENTIALS", "Correo o contrasena incorrectos"));
 
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            auditService.record(
+            // En transaccion aparte: el intento fallido debe quedar en la bitacora
+            // aunque esta operacion se revierta al lanzar la excepcion.
+            auditService.recordIndependent(
                     user.getTenant().getId(), user.getId(), "LOGIN_FAILED", "user", user.getId().toString(), ip, userAgent);
             throw DomainException.unauthorized(
                     "INVALID_CREDENTIALS", "Correo o contrasena incorrectos");
@@ -121,10 +126,11 @@ public class AuthService {
                         "INVALID_REFRESH_TOKEN", "El token de refresco no es valido"));
 
         if (stored.getRevokedAt() != null) {
-            // Reutilizacion de un token ya rotado: se invalida la familia completa.
-            refreshTokens.revokeAllByUserId(stored.getUserId(), Instant.now());
-            auditService.record(
-                    null, stored.getUserId(), "REFRESH_REUSE_DETECTED", "refresh_token", stored.getId().toString(), ip, userAgent);
+            // Reutilizacion de un token ya rotado: se invalida la familia completa y
+            // se deja constancia. Ambas cosas en una transaccion independiente, porque
+            // este camino termina en excepcion y de otro modo se revertirian.
+            securityIncidents.registerRefreshReuse(
+                    stored.getUserId(), stored.getId(), ip, userAgent);
             throw DomainException.unauthorized(
                     "REFRESH_TOKEN_REUSED", "Se detecto reutilizacion de un token; sesiones cerradas");
         }
