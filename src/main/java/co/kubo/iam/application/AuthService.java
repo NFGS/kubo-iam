@@ -21,6 +21,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -174,12 +176,17 @@ public class AuthService {
     }
 
     @Transactional(readOnly = true)
-    public List<UserResponse> listUsersOfTenant(String userId) {
+    public Page<UserResponse> listUsersOfTenant(String userId, int page, int size) {
         User user = users.findById(parseUuid(userId, "USER_NOT_FOUND"))
                 .orElseThrow(() -> DomainException.notFound("USER_NOT_FOUND", "Usuario no encontrado"));
-        return users.findByTenantIdOrderByCreatedAtAsc(user.getTenant().getId()).stream()
-                .map(this::toResponse)
-                .toList();
+
+        // El tamano de pagina se acota en el servidor: un cliente no puede pedir
+        // la tabla completa ni forzar una consulta desmedida.
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        int safePage = Math.max(page, 0);
+
+        return users.findByTenantId(user.getTenant().getId(), PageRequest.of(safePage, safeSize))
+                .map(this::toResponse);
     }
 
     private TokenResponse issueTokens(User user) {

@@ -4,6 +4,8 @@ import co.kubo.iam.domain.User;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface UserRepository extends JpaRepository<User, UUID> {
@@ -13,6 +15,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByEmailIgnoreCase(String email);
 
     List<User> findByTenantIdOrderByCreatedAtAsc(UUID tenantId);
+
+    /** Listado paginado: un negocio puede tener cientos de usuarios. */
+    Page<User> findByTenantId(UUID tenantId, Pageable pageable);
 
     long countByTenantId(UUID tenantId);
 }
