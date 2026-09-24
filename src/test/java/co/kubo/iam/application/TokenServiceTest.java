@@ -30,7 +30,7 @@ class TokenServiceTest {
         tokenService.init();
 
         Tenant tenant = new Tenant(
-                UUID.randomUUID(), "Tienda La Esquina", "tienda", "community", "America/Mexico_City", Instant.now());
+                UUID.randomUUID(), "Tienda La Esquina", "tienda", "community", "America/Mexico_City", "retail", Instant.now());
         user = new User(
                 UUID.randomUUID(),
                 tenant,
@@ -61,6 +61,7 @@ class TokenServiceTest {
                 java.nio.charset.StandardCharsets.UTF_8);
 
         assertThat(payload).contains("\"tenant_timezone\":\"America/Mexico_City\"");
+        assertThat(payload).contains("\"tenant_vertical\":\"retail\"");
     }
 
     @Test

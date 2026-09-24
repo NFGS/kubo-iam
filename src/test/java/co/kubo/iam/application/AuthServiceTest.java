@@ -70,7 +70,7 @@ class AuthServiceTest {
 
         service = new AuthService(users, tenants, refreshTokens, encoder, tokenService, audit, incidents, properties);
 
-        Tenant tenant = new Tenant(UUID.randomUUID(), "Tienda Test", "tienda-test", "community", "America/Bogota", Instant.now());
+        Tenant tenant = new Tenant(UUID.randomUUID(), "Tienda Test", "tienda-test", "community", "America/Bogota", "retail", Instant.now());
         user = new User(
                 UUID.randomUUID(),
                 tenant,

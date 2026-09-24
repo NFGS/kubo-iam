@@ -6,7 +6,9 @@ import co.kubo.iam.application.dto.AuthDtos.LogoutRequest;
 import co.kubo.iam.application.dto.AuthDtos.UpdateUserRequest;
 import co.kubo.iam.application.dto.AuthDtos.RefreshRequest;
 import co.kubo.iam.application.dto.AuthDtos.RegisterRequest;
+import co.kubo.iam.application.dto.AuthDtos.TenantResponse;
 import co.kubo.iam.application.dto.AuthDtos.TokenResponse;
+import co.kubo.iam.application.dto.AuthDtos.UpdateTenantRequest;
 import co.kubo.iam.application.dto.AuthDtos.UserResponse;
 import co.kubo.iam.config.KuboProperties;
 import co.kubo.iam.domain.RefreshToken;
@@ -18,10 +20,13 @@ import co.kubo.iam.domain.repository.RefreshTokenRepository;
 import co.kubo.iam.domain.repository.TenantRepository;
 import co.kubo.iam.domain.repository.UserRepository;
 import java.text.Normalizer;
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -76,6 +81,7 @@ public class AuthService {
                 "community",
                 // Zona horaria por defecto del negocio nuevo (ADR-0012).
                 "America/Bogota",
+                "retail",
                 now));
 
         User user = users.save(new User(
@@ -330,6 +336,64 @@ public class AuthService {
                 "Bearer",
                 properties.jwt().accessTokenMinutes() * 60L,
                 toResponse(user));
+    }
+
+    /** Paquetes de configuracion que el ERP sabe aplicar (contrato ADR-0013). */
+    private static final Set<String> VERTICALES = Set.of("retail", "servicios", "restaurantes", "agro");
+
+    public TenantResponse currentTenant(String actorId) {
+        User actor = users.findById(parseUuid(actorId, "USER_NOT_FOUND"))
+                .orElseThrow(() -> DomainException.notFound("USER_NOT_FOUND", "Usuario no encontrado"));
+
+        return toTenantResponse(actor.getTenant());
+    }
+
+    public TenantResponse updateTenant(String actorId, UpdateTenantRequest request) {
+        User actor = users.findById(parseUuid(actorId, "USER_NOT_FOUND"))
+                .orElseThrow(() -> DomainException.notFound("USER_NOT_FOUND", "Usuario no encontrado"));
+        Tenant tenant = actor.getTenant();
+
+        if (request.timezone() != null && !request.timezone().isBlank()) {
+            String timezone = request.timezone().trim();
+            if (!timezoneValida(timezone)) {
+                throw DomainException.badRequest(
+                        "INVALID_TIMEZONE", "La zona horaria indicada no es valida");
+            }
+            tenant.setTimezone(timezone);
+        }
+
+        if (request.vertical() != null && !request.vertical().isBlank()) {
+            String vertical = request.vertical().trim().toLowerCase(Locale.ROOT);
+            if (!VERTICALES.contains(vertical)) {
+                throw DomainException.badRequest("INVALID_VERTICAL", "El vertical indicado no es valido");
+            }
+            tenant.setVertical(vertical);
+        }
+
+        tenants.save(tenant);
+        auditService.record(
+                tenant.getId(), actor.getId(), "TENANT_UPDATED", "tenant", tenant.getId().toString(), null, null);
+
+        return toTenantResponse(tenant);
+    }
+
+    private boolean timezoneValida(String timezone) {
+        try {
+            ZoneId.of(timezone);
+            return true;
+        } catch (DateTimeException exception) {
+            return false;
+        }
+    }
+
+    private TenantResponse toTenantResponse(Tenant tenant) {
+        return new TenantResponse(
+                tenant.getId().toString(),
+                tenant.getName(),
+                tenant.getSlug(),
+                tenant.getPlan(),
+                tenant.getTimezone(),
+                tenant.getVertical());
     }
 
     private UserResponse toResponse(User user) {

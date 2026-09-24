@@ -28,6 +28,10 @@ public class Tenant {
     @Column(nullable = false, length = 60)
     private String timezone;
 
+    /** Paquete de configuracion activo (ADR-0013, P-17): retail, servicios, etc. */
+    @Column(nullable = false, length = 40)
+    private String vertical;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -35,12 +39,20 @@ public class Tenant {
         // requerido por JPA
     }
 
-    public Tenant(UUID id, String name, String slug, String plan, String timezone, Instant createdAt) {
+    public Tenant(
+            UUID id,
+            String name,
+            String slug,
+            String plan,
+            String timezone,
+            String vertical,
+            Instant createdAt) {
         this.id = id;
         this.name = name;
         this.slug = slug;
         this.plan = plan;
         this.timezone = timezone;
+        this.vertical = vertical;
         this.createdAt = createdAt;
     }
 
@@ -70,6 +82,14 @@ public class Tenant {
 
     public void setTimezone(String timezone) {
         this.timezone = timezone;
+    }
+
+    public String getVertical() {
+        return vertical;
+    }
+
+    public void setVertical(String vertical) {
+        this.vertical = vertical;
     }
 
     public Instant getCreatedAt() {

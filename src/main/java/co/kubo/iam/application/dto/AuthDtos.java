@@ -59,6 +59,25 @@ public final class AuthDtos {
             String tenantName) {
     }
 
+    /** Cambio de perfil del negocio: zona horaria y/o vertical (ADR-0012, ADR-0013). */
+    public record UpdateTenantRequest(
+            @Size(max = 60) String timezone,
+            @Size(max = 40) String vertical) {
+    }
+
+    public record TenantResponse(
+            String id,
+            String name,
+            String slug,
+            String plan,
+            String timezone,
+            String vertical) {
+    }
+
+    /** Envoltura estandar de la API: {"data": ...}, igual que el resto de servicios. */
+    public record TenantItem(TenantResponse data) {
+    }
+
     public record TokenResponse(
             String accessToken,
             String refreshToken,

@@ -12,7 +12,9 @@ import static org.mockito.Mockito.when;
 import co.kubo.iam.application.dto.AuthDtos.LogoutRequest;
 import co.kubo.iam.application.dto.AuthDtos.RefreshRequest;
 import co.kubo.iam.application.dto.AuthDtos.RegisterRequest;
+import co.kubo.iam.application.dto.AuthDtos.TenantResponse;
 import co.kubo.iam.application.dto.AuthDtos.TokenResponse;
+import co.kubo.iam.application.dto.AuthDtos.UpdateTenantRequest;
 import co.kubo.iam.application.dto.AuthDtos.UpdateUserRequest;
 import co.kubo.iam.application.dto.AuthDtos.UserResponse;
 import co.kubo.iam.config.KuboProperties;
@@ -77,7 +79,7 @@ class AuthServiceFlowsTest {
 
         service = new AuthService(users, tenants, refreshTokens, encoder, tokenService, audit, incidents, properties);
 
-        Tenant tenant = new Tenant(UUID.randomUUID(), "Tienda Test", "tienda-test", "community", "America/Bogota", Instant.now());
+        Tenant tenant = new Tenant(UUID.randomUUID(), "Tienda Test", "tienda-test", "community", "America/Bogota", "retail", Instant.now());
         user = new User(
                 UUID.randomUUID(), tenant, "dueno@test.local", "hash", "Dueno Test",
                 UserRole.OWNER, UserStatus.ACTIVE, Instant.now());
@@ -215,6 +217,31 @@ class AuthServiceFlowsTest {
                 .isInstanceOf(DomainException.class)
                 .extracting(exception -> ((DomainException) exception).getCode())
                 .isEqualTo("USER_NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("El negocio cambia de vertical y zona horaria solo a valores conocidos (ADR-0013)")
+    void cambiaElPerfilDelNegocio() {
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
+        when(tenants.save(any(Tenant.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TenantResponse actualizado = service.updateTenant(
+                user.getId().toString(), new UpdateTenantRequest("America/Mexico_City", "restaurantes"));
+
+        assertThat(actualizado.vertical()).isEqualTo("restaurantes");
+        assertThat(actualizado.timezone()).isEqualTo("America/Mexico_City");
+
+        assertThatThrownBy(() -> service.updateTenant(
+                user.getId().toString(), new UpdateTenantRequest(null, "inventado")))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("INVALID_VERTICAL");
+
+        assertThatThrownBy(() -> service.updateTenant(
+                user.getId().toString(), new UpdateTenantRequest("Marte/Olympus", null)))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("INVALID_TIMEZONE");
     }
 
     @Test

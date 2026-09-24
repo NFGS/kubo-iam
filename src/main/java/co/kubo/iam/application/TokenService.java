@@ -96,6 +96,8 @@ public class TokenService {
                     // Zona horaria del negocio (ADR-0012): el gateway la
                     // propaga al ERP para que su dia comercial sea el correcto.
                     .claim("tenant_timezone", user.getTenant().getTimezone())
+                    // Paquete de configuracion activo (ADR-0013, P-17).
+                    .claim("tenant_vertical", user.getTenant().getVertical())
                     .build();
 
             SignedJWT jwt = new SignedJWT(
