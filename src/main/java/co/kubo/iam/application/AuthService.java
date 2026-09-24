@@ -74,6 +74,8 @@ public class AuthService {
                 request.tenantName().trim(),
                 uniqueSlug(request.tenantName()),
                 "community",
+                // Zona horaria por defecto del negocio nuevo (ADR-0012).
+                "America/Bogota",
                 now));
 
         User user = users.save(new User(

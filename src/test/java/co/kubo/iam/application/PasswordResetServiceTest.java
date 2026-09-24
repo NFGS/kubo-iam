@@ -68,7 +68,7 @@ class PasswordResetServiceTest {
         service = new PasswordResetService(
                 users, tokens, refreshTokens, encoder, tokenService, mail, audit, properties);
 
-        Tenant tenant = new Tenant(UUID.randomUUID(), "Tienda Test", "tienda-test", "community", Instant.now());
+        Tenant tenant = new Tenant(UUID.randomUUID(), "Tienda Test", "tienda-test", "community", "America/Bogota", Instant.now());
         user = new User(
                 UUID.randomUUID(),
                 tenant,

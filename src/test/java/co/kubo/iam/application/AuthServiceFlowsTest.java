@@ -77,7 +77,7 @@ class AuthServiceFlowsTest {
 
         service = new AuthService(users, tenants, refreshTokens, encoder, tokenService, audit, incidents, properties);
 
-        Tenant tenant = new Tenant(UUID.randomUUID(), "Tienda Test", "tienda-test", "community", Instant.now());
+        Tenant tenant = new Tenant(UUID.randomUUID(), "Tienda Test", "tienda-test", "community", "America/Bogota", Instant.now());
         user = new User(
                 UUID.randomUUID(), tenant, "dueno@test.local", "hash", "Dueno Test",
                 UserRole.OWNER, UserStatus.ACTIVE, Instant.now());

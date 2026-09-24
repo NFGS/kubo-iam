@@ -29,7 +29,8 @@ class TokenServiceTest {
         tokenService = new TokenService(properties);
         tokenService.init();
 
-        Tenant tenant = new Tenant(UUID.randomUUID(), "Tienda La Esquina", "tienda", "community", Instant.now());
+        Tenant tenant = new Tenant(
+                UUID.randomUUID(), "Tienda La Esquina", "tienda", "community", "America/Mexico_City", Instant.now());
         user = new User(
                 UUID.randomUUID(),
                 tenant,
@@ -49,6 +50,17 @@ class TokenServiceTest {
         assertThat(token).isNotBlank();
         assertThat(token.split("\\.")).hasSize(3);
         assertThat(tokenService.keyId()).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("El token lleva la zona horaria del negocio (ADR-0012)")
+    void incluyeLaZonaHorariaDelNegocio() {
+        String token = tokenService.signAccessToken(user);
+        String payload = new String(
+                java.util.Base64.getUrlDecoder().decode(token.split("\\.")[1]),
+                java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(payload).contains("\"tenant_timezone\":\"America/Mexico_City\"");
     }
 
     @Test

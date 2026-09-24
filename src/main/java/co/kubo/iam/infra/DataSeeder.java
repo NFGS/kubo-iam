@@ -69,7 +69,8 @@ public class DataSeeder implements ApplicationRunner {
 
         Instant now = Instant.now();
         Tenant tenant = tenants.save(new Tenant(
-                UUID.randomUUID(), properties.seed().tenantName(), "tienda-la-esquina", "community", now));
+                UUID.randomUUID(), properties.seed().tenantName(), "tienda-la-esquina", "community",
+                "America/Bogota", now));
 
         String adminEmail = properties.seed().adminEmail().toLowerCase(Locale.ROOT);
         User owner = users.save(new User(

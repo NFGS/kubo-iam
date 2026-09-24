@@ -24,6 +24,10 @@ public class Tenant {
     @Column(nullable = false, length = 40)
     private String plan;
 
+    /** Zona horaria IANA del negocio (ADR-0012): define su dia comercial. */
+    @Column(nullable = false, length = 60)
+    private String timezone;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -31,11 +35,12 @@ public class Tenant {
         // requerido por JPA
     }
 
-    public Tenant(UUID id, String name, String slug, String plan, Instant createdAt) {
+    public Tenant(UUID id, String name, String slug, String plan, String timezone, Instant createdAt) {
         this.id = id;
         this.name = name;
         this.slug = slug;
         this.plan = plan;
+        this.timezone = timezone;
         this.createdAt = createdAt;
     }
 
@@ -57,6 +62,14 @@ public class Tenant {
 
     public String getPlan() {
         return plan;
+    }
+
+    public String getTimezone() {
+        return timezone;
+    }
+
+    public void setTimezone(String timezone) {
+        this.timezone = timezone;
     }
 
     public Instant getCreatedAt() {

@@ -73,7 +73,7 @@ class RlsIntegrationTest {
 
         Instant now = Instant.now();
         Tenant tenant = tenants.saveAndFlush(
-                new Tenant(UUID.randomUUID(), "Tienda Test", "tienda-test", "community", now));
+                new Tenant(UUID.randomUUID(), "Tienda Test", "tienda-test", "community", "America/Bogota", now));
         // saveAndFlush: la comprobacion siguiente usa JDBC directo y no pasa por
         // Hibernate, que de otro modo mantendria la fila sin escribir.
         users.saveAndFlush(new User(

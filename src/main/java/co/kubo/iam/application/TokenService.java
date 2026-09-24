@@ -93,6 +93,9 @@ public class TokenService {
                     .claim("role", user.getRole().name())
                     .claim("tenant_id", user.getTenant().getId().toString())
                     .claim("tenant", user.getTenant().getName())
+                    // Zona horaria del negocio (ADR-0012): el gateway la
+                    // propaga al ERP para que su dia comercial sea el correcto.
+                    .claim("tenant_timezone", user.getTenant().getTimezone())
                     .build();
 
             SignedJWT jwt = new SignedJWT(

@@ -47,7 +47,7 @@ class SecurityIncidentServiceTest {
     @BeforeEach
     void setUp() {
         service = new SecurityIncidentService(refreshTokens, users, audit, jdbc);
-        Tenant tenant = new Tenant(UUID.randomUUID(), "Tienda Test", "tienda-test", "community", Instant.now());
+        Tenant tenant = new Tenant(UUID.randomUUID(), "Tienda Test", "tienda-test", "community", "America/Bogota", Instant.now());
         user = new User(
                 UUID.randomUUID(), tenant, "dueno@test.local", "hash", "Dueno Test",
                 UserRole.OWNER, UserStatus.ACTIVE, Instant.now());
