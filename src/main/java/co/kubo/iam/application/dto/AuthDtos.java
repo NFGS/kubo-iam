@@ -30,6 +30,20 @@ public final class AuthDtos {
     public record ForgotPasswordRequest(@NotBlank @Email @Size(max = 180) String email) {
     }
 
+    public record CreateUserRequest(
+            @NotBlank @Size(max = 160) String fullName,
+            @NotBlank @Email @Size(max = 180) String email,
+            @NotBlank @Size(min = 8, max = 72) String password,
+            @NotBlank String role) {
+    }
+
+    /** Actualizacion parcial: los campos ausentes conservan su valor. */
+    public record UpdateUserRequest(
+            @Size(max = 160) String fullName,
+            String role,
+            String status) {
+    }
+
     public record ResetPasswordRequest(
             @NotBlank String token,
             @NotBlank @Size(min = 8, max = 72) String newPassword) {
@@ -40,6 +54,7 @@ public final class AuthDtos {
             String email,
             String fullName,
             String role,
+            String status,
             String tenantId,
             String tenantName) {
     }

@@ -28,6 +28,10 @@ public class DomainException extends RuntimeException {
         return new DomainException(code, message, 404);
     }
 
+    public static DomainException forbidden(String code, String message) {
+        return new DomainException(code, message, 403);
+    }
+
     public String getCode() {
         return code;
     }

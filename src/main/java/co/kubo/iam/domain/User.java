@@ -102,6 +102,10 @@ public class User {
         return fullName;
     }
 
+    public void setFullName(String fullName) {
+        this.fullName = fullName;
+    }
+
     public UserRole getRole() {
         return role;
     }

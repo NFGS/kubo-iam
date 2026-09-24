@@ -24,6 +24,18 @@ public class GlobalExceptionHandler {
                 .body(body(exception.getCode(), exception.getMessage()));
     }
 
+    /**
+     * Violacion de una restriccion del motor (por ejemplo, el correo unico global).
+     * Se traduce a 409 en lugar de un 500: es un conflicto de datos, no un fallo.
+     */
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleIntegrity(
+            org.springframework.dao.DataIntegrityViolationException exception) {
+        log.warn("Violacion de integridad: {}", exception.getMostSpecificCause().getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(body("CONFLICT", "El dato ya existe o no cumple una restriccion"));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException exception) {
         String detail = exception.getBindingResult().getFieldErrors().stream()

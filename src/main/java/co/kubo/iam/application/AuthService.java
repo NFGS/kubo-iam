@@ -1,7 +1,9 @@
 package co.kubo.iam.application;
 
+import co.kubo.iam.application.dto.AuthDtos.CreateUserRequest;
 import co.kubo.iam.application.dto.AuthDtos.LoginRequest;
 import co.kubo.iam.application.dto.AuthDtos.LogoutRequest;
+import co.kubo.iam.application.dto.AuthDtos.UpdateUserRequest;
 import co.kubo.iam.application.dto.AuthDtos.RefreshRequest;
 import co.kubo.iam.application.dto.AuthDtos.RegisterRequest;
 import co.kubo.iam.application.dto.AuthDtos.TokenResponse;
@@ -214,6 +216,81 @@ public class AuthService {
                 .map(this::toResponse);
     }
 
+    /**
+     * Crea un usuario dentro del negocio del actor (P-20).
+     *
+     * <p>El correo se comprueba primero dentro del negocio (la consulta corre con el contexto de
+     * RLS del tenant) y, ademas, el indice unico global lo garantiza en el motor: si otro negocio
+     * ya lo usa, la violacion se traduce a 409.
+     */
+    @Transactional
+    public UserResponse createUser(String actorId, CreateUserRequest request) {
+        User actor = users.findById(parseUuid(actorId, "USER_NOT_FOUND"))
+                .orElseThrow(() -> DomainException.notFound("USER_NOT_FOUND", "Usuario no encontrado"));
+
+        String email = request.email().trim().toLowerCase(Locale.ROOT);
+        if (users.existsByEmailIgnoreCase(email)) {
+            throw DomainException.conflict("EMAIL_ALREADY_EXISTS", "El correo ya esta registrado");
+        }
+
+        User user = users.save(new User(
+                UUID.randomUUID(),
+                actor.getTenant(),
+                email,
+                passwordEncoder.encode(request.password()),
+                request.fullName().trim(),
+                parseRole(request.role()),
+                UserStatus.ACTIVE,
+                Instant.now()));
+
+        auditService.record(
+                actor.getTenant().getId(), user.getId(), "USER_CREATED", "user", user.getId().toString(), null, null);
+
+        return toResponse(user);
+    }
+
+    /** Actualiza nombre, rol o estado de un usuario del mismo negocio (P-20). */
+    @Transactional
+    public UserResponse updateUser(String actorId, String targetId, UpdateUserRequest request) {
+        User actor = users.findById(parseUuid(actorId, "USER_NOT_FOUND"))
+                .orElseThrow(() -> DomainException.notFound("USER_NOT_FOUND", "Usuario no encontrado"));
+
+        User target = users.findById(parseUuid(targetId, "USER_NOT_FOUND"))
+                .orElseThrow(() -> DomainException.notFound("USER_NOT_FOUND", "Usuario no encontrado"));
+
+        if (request.fullName() != null && !request.fullName().isBlank()) {
+            target.setFullName(request.fullName().trim());
+        }
+        if (request.role() != null && !request.role().isBlank()) {
+            target.setRole(parseRole(request.role()));
+        }
+        if (request.status() != null && !request.status().isBlank()) {
+            target.setStatus(parseStatus(request.status()));
+        }
+
+        users.save(target);
+        auditService.record(
+                actor.getTenant().getId(), target.getId(), "USER_UPDATED", "user", target.getId().toString(), null, null);
+
+        return toResponse(target);
+    }
+
+    private UserRole parseRole(String value) {
+        try {
+            return UserRole.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (Exception exception) {
+            throw DomainException.badRequest("INVALID_ROLE", "El rol indicado no es valido");
+        }
+    }
+
+    private UserStatus parseStatus(String value) {
+        try {
+            return UserStatus.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (Exception exception) {
+            throw DomainException.badRequest("INVALID_STATUS", "El estado indicado no es valido");
+        }
+    }
+
     private TokenResponse issueTokens(User user) {
         String accessToken = tokenService.signAccessToken(user);
         String rawRefresh = tokenService.newRefreshToken();
@@ -238,6 +315,7 @@ public class AuthService {
                 user.getEmail(),
                 user.getFullName(),
                 user.getRole().name(),
+                user.getStatus().name(),
                 user.getTenant().getId().toString(),
                 user.getTenant().getName());
     }
