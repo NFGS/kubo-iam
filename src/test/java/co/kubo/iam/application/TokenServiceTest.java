@@ -22,7 +22,10 @@ class TokenServiceTest {
     void setUp() {
         KuboProperties properties = new KuboProperties(
                 new KuboProperties.Jwt("kubo-iam", "kubo-api", 15, 7, ""),
-                new KuboProperties.Seed(false, "admin@kubo.local", "Admin123!", "Tienda"));
+                new KuboProperties.Seed(false, "admin@kubo.local", "Admin123!", "Tienda"),
+                new KuboProperties.Auth(5, 15, 30),
+                new KuboProperties.Mail("log", "no-responder@kubo.local", "http://localhost:3000/reset",
+                        "", 587, "", "", true));
         tokenService = new TokenService(properties);
         tokenService.init();
 
@@ -61,7 +64,7 @@ class TokenServiceTest {
     @DisplayName("El refresh token es aleatorio y su hash es SHA-256 en hexadecimal")
     void refreshTokensAreRandomAndHashed() {
         String first = tokenService.newRefreshToken();
-        String second = tokenService.newRefreshToken();
+        String second = tokenService.newSecureToken();
 
         assertThat(first).isNotEqualTo(second);
         assertThat(first).doesNotContain("+", "/", "=");

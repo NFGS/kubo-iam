@@ -27,6 +27,14 @@ public final class AuthDtos {
     public record LogoutRequest(@NotBlank String refreshToken) {
     }
 
+    public record ForgotPasswordRequest(@NotBlank @Email @Size(max = 180) String email) {
+    }
+
+    public record ResetPasswordRequest(
+            @NotBlank String token,
+            @NotBlank @Size(min = 8, max = 72) String newPassword) {
+    }
+
     public record UserResponse(
             String id,
             String email,
@@ -54,6 +62,7 @@ public final class AuthDtos {
             String entityId,
             String hash,
             String prevHash,
+            int hashVersion,
             Instant createdAt) {
     }
 }

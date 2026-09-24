@@ -44,6 +44,14 @@ public class User {
     @Column(name = "last_login_at")
     private Instant lastLoginAt;
 
+    /** Intentos fallidos consecutivos desde el ultimo acceso correcto (P-11). */
+    @Column(name = "failed_login_attempts", nullable = false)
+    private int failedLoginAttempts;
+
+    /** Hasta cuando la cuenta queda bloqueada por intentos fallidos (P-11). */
+    @Column(name = "locked_until")
+    private Instant lockedUntil;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -116,6 +124,22 @@ public class User {
 
     public void setLastLoginAt(Instant lastLoginAt) {
         this.lastLoginAt = lastLoginAt;
+    }
+
+    public int getFailedLoginAttempts() {
+        return failedLoginAttempts;
+    }
+
+    public void setFailedLoginAttempts(int failedLoginAttempts) {
+        this.failedLoginAttempts = failedLoginAttempts;
+    }
+
+    public Instant getLockedUntil() {
+        return lockedUntil;
+    }
+
+    public void setLockedUntil(Instant lockedUntil) {
+        this.lockedUntil = lockedUntil;
     }
 
     public Instant getCreatedAt() {

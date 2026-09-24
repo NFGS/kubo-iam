@@ -97,11 +97,27 @@ public class AuthService {
                 .orElseThrow(() -> DomainException.unauthorized(
                         "INVALID_CREDENTIALS", "Correo o contrasena incorrectos"));
 
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            // En transaccion aparte: el intento fallido debe quedar en la bitacora
-            // aunque esta operacion se revierta al lanzar la excepcion.
+        if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now())) {
             auditService.recordIndependent(
-                    user.getTenant().getId(), user.getId(), "LOGIN_FAILED", "user", user.getId().toString(), ip, userAgent);
+                    user.getTenant().getId(), user.getId(), "LOGIN_BLOCKED", "user", user.getId().toString(), ip, userAgent);
+            throw DomainException.unauthorized(
+                    "ACCOUNT_LOCKED", "La cuenta esta bloqueada temporalmente por intentos fallidos");
+        }
+
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            // En transaccion aparte: el contador y el bloqueo deben sobrevivir al
+            // rollback de este login, que termina en excepcion.
+            SecurityIncidentService.LoginFailure failure = securityIncidents.registerLoginFailure(
+                    user.getId(),
+                    ip,
+                    userAgent,
+                    properties.auth().maxFailedAttempts(),
+                    properties.auth().lockMinutes());
+
+            if (failure.locked()) {
+                throw DomainException.unauthorized(
+                        "ACCOUNT_LOCKED", "La cuenta quedo bloqueada temporalmente por intentos fallidos");
+            }
             throw DomainException.unauthorized(
                     "INVALID_CREDENTIALS", "Correo o contrasena incorrectos");
         }
@@ -110,7 +126,10 @@ public class AuthService {
             throw DomainException.unauthorized("USER_DISABLED", "El usuario esta deshabilitado");
         }
 
+        // Acceso correcto: se limpia el contador de intentos y cualquier bloqueo vigente.
         user.setLastLoginAt(Instant.now());
+        user.setFailedLoginAttempts(0);
+        user.setLockedUntil(null);
         users.save(user);
         auditService.record(
                 user.getTenant().getId(), user.getId(), "LOGIN_SUCCEEDED", "user", user.getId().toString(), ip, userAgent);

@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,18 +34,21 @@ public class DataSeeder implements ApplicationRunner {
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
     private final KuboProperties properties;
+    private final JdbcTemplate jdbcTemplate;
 
     public DataSeeder(
             UserRepository users,
             TenantRepository tenants,
             PasswordEncoder passwordEncoder,
             AuditService auditService,
-            KuboProperties properties) {
+            KuboProperties properties,
+            JdbcTemplate jdbcTemplate) {
         this.users = users;
         this.tenants = tenants;
         this.passwordEncoder = passwordEncoder;
         this.auditService = auditService;
         this.properties = properties;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Override
@@ -53,6 +57,11 @@ public class DataSeeder implements ApplicationRunner {
         if (!properties.seed().enabled()) {
             return;
         }
+
+        // La semilla es una operacion de sistema: crea el negocio y sus usuarios
+        // antes de que exista una peticion con identidad. Con RLS activo, sin
+        // esta marca no veria ni insertaria ninguna fila.
+        jdbcTemplate.queryForObject("select set_config('app.system', 'on', true)", String.class);
         if (users.count() > 0) {
             log.info("Semilla omitida: ya existen usuarios registrados");
             return;

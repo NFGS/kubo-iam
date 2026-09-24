@@ -42,6 +42,7 @@ public class UserController {
                         entry.getEntityId(),
                         entry.getHash(),
                         entry.getPrevHash(),
+                        entry.getHashVersion(),
                         entry.getCreatedAt()))
                 .toList();
     }

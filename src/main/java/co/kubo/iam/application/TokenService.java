@@ -109,6 +109,11 @@ public class TokenService {
     }
 
     public String newRefreshToken() {
+        return newSecureToken();
+    }
+
+    /** Valor aleatorio de 384 bits para cualquier credencial opaca (refresh o recuperacion). */
+    public String newSecureToken() {
         byte[] bytes = new byte[REFRESH_TOKEN_BYTES];
         random.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);

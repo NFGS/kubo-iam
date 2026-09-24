@@ -1,11 +1,14 @@
 package co.kubo.iam.web;
 
 import co.kubo.iam.application.AuthService;
+import co.kubo.iam.application.PasswordResetService;
 import co.kubo.iam.application.TokenService;
+import co.kubo.iam.application.dto.AuthDtos.ForgotPasswordRequest;
 import co.kubo.iam.application.dto.AuthDtos.LoginRequest;
 import co.kubo.iam.application.dto.AuthDtos.LogoutRequest;
 import co.kubo.iam.application.dto.AuthDtos.RefreshRequest;
 import co.kubo.iam.application.dto.AuthDtos.RegisterRequest;
+import co.kubo.iam.application.dto.AuthDtos.ResetPasswordRequest;
 import co.kubo.iam.application.dto.AuthDtos.TokenResponse;
 import co.kubo.iam.application.dto.AuthDtos.UserResponse;
 import co.kubo.iam.config.InternalAuthFilter;
@@ -25,10 +28,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final PasswordResetService passwordResetService;
     private final TokenService tokenService;
 
-    public AuthController(AuthService authService, TokenService tokenService) {
+    public AuthController(
+            AuthService authService, PasswordResetService passwordResetService, TokenService tokenService) {
         this.authService = authService;
+        this.passwordResetService = passwordResetService;
         this.tokenService = tokenService;
     }
 
@@ -52,6 +58,26 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(@Valid @RequestBody LogoutRequest request) {
         authService.logout(request);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Solicita el enlace de recuperacion. Responde 204 exista o no la cuenta: la respuesta no
+     * puede servir para averiguar que correos estan registrados.
+     */
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Void> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request, HttpServletRequest http) {
+        passwordResetService.request(request.email(), clientIp(http), http.getHeader("User-Agent"));
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Consume el token del enlace y cambia la contrasena. */
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(
+            @Valid @RequestBody ResetPasswordRequest request, HttpServletRequest http) {
+        passwordResetService.reset(
+                request.token(), request.newPassword(), clientIp(http), http.getHeader("User-Agent"));
         return ResponseEntity.noContent().build();
     }
 

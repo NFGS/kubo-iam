@@ -39,6 +39,19 @@ kubo:
     admin-email: ${KUBO_ADMIN_EMAIL:admin@kubo.local}
     admin-password: ${KUBO_ADMIN_PASSWORD:Admin123!}
     tenant-name: ${KUBO_TENANT_NAME:Tienda La Esquina}
+  auth:
+    max-failed-attempts: ${KUBO_AUTH_MAX_FAILED_ATTEMPTS:5}
+    lock-minutes: ${KUBO_AUTH_LOCK_MINUTES:15}
+    reset-token-minutes: ${KUBO_AUTH_RESET_TOKEN_MINUTES:30}
+  mail:
+    transport: ${KUBO_MAIL_TRANSPORT:log}
+    from: ${KUBO_MAIL_FROM:no-responder@kubo.local}
+    reset-url-base: ${KUBO_RESET_URL_BASE:http://localhost:3000/recuperar}
+    smtp-host: ${KUBO_SMTP_HOST:}
+    smtp-port: ${KUBO_SMTP_PORT:587}
+    smtp-username: ${KUBO_SMTP_USERNAME:}
+    smtp-password: ${KUBO_SMTP_PASSWORD:}
+    smtp-starttls: ${KUBO_SMTP_STARTTLS:true}
 
 management:
   endpoints:

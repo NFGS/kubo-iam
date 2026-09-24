@@ -45,6 +45,10 @@ public class AuditLog {
     @Column(nullable = false, length = 64)
     private String hash;
 
+    /** Version del algoritmo con que se calculo {@link #hash} (ver {@code AuditHash}). */
+    @Column(name = "hash_version", nullable = false)
+    private int hashVersion;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -63,6 +67,7 @@ public class AuditLog {
             String userAgent,
             String prevHash,
             String hash,
+            int hashVersion,
             Instant createdAt) {
         this.id = id;
         this.tenantId = tenantId;
@@ -74,6 +79,7 @@ public class AuditLog {
         this.userAgent = userAgent;
         this.prevHash = prevHash;
         this.hash = hash;
+        this.hashVersion = hashVersion;
         this.createdAt = createdAt;
     }
 
@@ -87,6 +93,10 @@ public class AuditLog {
 
     public String getHash() {
         return hash;
+    }
+
+    public int getHashVersion() {
+        return hashVersion;
     }
 
     public String getPrevHash() {

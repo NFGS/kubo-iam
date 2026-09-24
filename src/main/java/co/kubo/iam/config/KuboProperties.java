@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Propiedades de configuracion del servicio, agrupadas bajo el prefijo {@code kubo}.
  */
 @ConfigurationProperties(prefix = "kubo")
-public record KuboProperties(Jwt jwt, Seed seed) {
+public record KuboProperties(Jwt jwt, Seed seed, Auth auth, Mail mail) {
 
     public record Jwt(
             String issuer,
@@ -21,5 +21,21 @@ public record KuboProperties(Jwt jwt, Seed seed) {
             String adminEmail,
             String adminPassword,
             String tenantName) {
+    }
+
+    /** Politicas de autenticacion: bloqueo por intentos y vigencia del enlace de recuperacion. */
+    public record Auth(int maxFailedAttempts, int lockMinutes, int resetTokenMinutes) {
+    }
+
+    /** Transporte de correo: `log` (buzon de demostracion) o `smtp` (servidor real). */
+    public record Mail(
+            String transport,
+            String from,
+            String resetUrlBase,
+            String smtpHost,
+            int smtpPort,
+            String smtpUsername,
+            String smtpPassword,
+            boolean smtpStartTls) {
     }
 }
