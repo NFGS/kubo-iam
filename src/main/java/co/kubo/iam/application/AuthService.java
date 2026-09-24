@@ -2,6 +2,10 @@ package co.kubo.iam.application;
 
 import co.kubo.iam.application.dto.AuthDtos.CreateUserRequest;
 import co.kubo.iam.application.dto.AuthDtos.LoginRequest;
+import co.kubo.iam.application.dto.AuthDtos.LoginResult;
+import co.kubo.iam.application.dto.AuthDtos.TotpChallengeResponse;
+import co.kubo.iam.application.dto.AuthDtos.TotpSetupResponse;
+import co.kubo.iam.application.dto.AuthDtos.TotpVerifyRequest;
 import co.kubo.iam.application.dto.AuthDtos.LogoutRequest;
 import co.kubo.iam.application.dto.AuthDtos.UpdateUserRequest;
 import co.kubo.iam.application.dto.AuthDtos.RefreshRequest;
@@ -11,6 +15,7 @@ import co.kubo.iam.application.dto.AuthDtos.TokenResponse;
 import co.kubo.iam.application.dto.AuthDtos.UpdateTenantRequest;
 import co.kubo.iam.application.dto.AuthDtos.UserResponse;
 import co.kubo.iam.config.KuboProperties;
+import co.kubo.iam.config.TotpSecretCipher;
 import co.kubo.iam.domain.RefreshToken;
 import co.kubo.iam.domain.Tenant;
 import co.kubo.iam.domain.User;
@@ -45,6 +50,8 @@ public class AuthService {
     private final TokenService tokenService;
     private final AuditService auditService;
     private final SecurityIncidentService securityIncidents;
+    private final TotpService totpService;
+    private final TotpSecretCipher totpCipher;
     private final KuboProperties properties;
 
     public AuthService(
@@ -55,7 +62,9 @@ public class AuthService {
             TokenService tokenService,
             AuditService auditService,
             SecurityIncidentService securityIncidents,
-            KuboProperties properties) {
+            KuboProperties properties,
+            TotpService totpService,
+            TotpSecretCipher totpCipher) {
         this.users = users;
         this.tenants = tenants;
         this.refreshTokens = refreshTokens;
@@ -63,6 +72,8 @@ public class AuthService {
         this.tokenService = tokenService;
         this.auditService = auditService;
         this.securityIncidents = securityIncidents;
+        this.totpService = totpService;
+        this.totpCipher = totpCipher;
         this.properties = properties;
     }
 
@@ -101,7 +112,7 @@ public class AuthService {
     }
 
     @Transactional
-    public TokenResponse login(LoginRequest request, String ip, String userAgent) {
+    public LoginResult login(LoginRequest request, String ip, String userAgent) {
         String email = request.email().trim().toLowerCase(Locale.ROOT);
         User user = users.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> DomainException.unauthorized(
@@ -136,7 +147,20 @@ public class AuthService {
             throw DomainException.unauthorized("USER_DISABLED", "El usuario esta deshabilitado");
         }
 
-        // Acceso correcto: se limpia el contador de intentos y cualquier bloqueo vigente.
+        // Con el segundo factor activo, la contrasena correcta solo abre el
+        // desafio: la sesion se emite cuando el codigo TOTP es valido (P-30).
+        if (user.isTotpEnabled()) {
+            auditService.record(
+                    user.getTenant().getId(), user.getId(), "TOTP_CHALLENGED", "user", user.getId().toString(), ip, userAgent);
+            return new LoginResult.Totp(
+                    new TotpChallengeResponse(true, tokenService.signTotpChallenge(user)));
+        }
+
+        return new LoginResult.Tokens(completeLogin(user, ip, userAgent));
+    }
+
+    /** Cierre comun de un acceso correcto (con o sin segundo factor). */
+    private TokenResponse completeLogin(User user, String ip, String userAgent) {
         user.setLastLoginAt(Instant.now());
         user.setFailedLoginAttempts(0);
         user.setLockedUntil(null);
@@ -145,6 +169,82 @@ public class AuthService {
                 user.getTenant().getId(), user.getId(), "LOGIN_SUCCEEDED", "user", user.getId().toString(), ip, userAgent);
 
         return issueTokens(user);
+    }
+
+    /** Genera (o regenera) el secreto TOTP; queda pendiente de confirmar. */
+    public TotpSetupResponse totpSetup(String actorId) {
+        User user = requireUser(actorId);
+        String secret = totpService.newSecret();
+
+        user.setTotpSecret(totpCipher.encrypt(secret));
+        user.setTotpEnabled(false);
+        users.save(user);
+
+        return new TotpSetupResponse(secret, totpService.otpauthUri(user.getEmail(), secret));
+    }
+
+    /** Activa el segundo factor: el primer codigo demuestra que el secreto quedo bien. */
+    public UserResponse totpEnable(String actorId, String code) {
+        User user = requireUser(actorId);
+
+        if (user.getTotpSecret() == null) {
+            throw DomainException.badRequest(
+                    "TOTP_NOT_SETUP", "Primero genera el secreto del segundo factor");
+        }
+
+        if (!totpService.verify(totpCipher.decrypt(user.getTotpSecret()), code, Instant.now())) {
+            throw DomainException.unauthorized("INVALID_TOTP", "El codigo de verificacion no es valido");
+        }
+
+        user.setTotpEnabled(true);
+        users.save(user);
+        auditService.record(
+                user.getTenant().getId(), user.getId(), "TOTP_ENABLED", "user", user.getId().toString(), null, null);
+
+        return toResponse(user);
+    }
+
+    /** Desactiva el segundo factor; exige un codigo vigente. */
+    public UserResponse totpDisable(String actorId, String code) {
+        User user = requireUser(actorId);
+
+        if (!user.isTotpEnabled()) {
+            throw DomainException.badRequest("TOTP_NOT_ENABLED", "El segundo factor no esta activo");
+        }
+
+        if (!totpService.verify(totpCipher.decrypt(user.getTotpSecret()), code, Instant.now())) {
+            throw DomainException.unauthorized("INVALID_TOTP", "El codigo de verificacion no es valido");
+        }
+
+        user.setTotpEnabled(false);
+        user.setTotpSecret(null);
+        users.save(user);
+        auditService.record(
+                user.getTenant().getId(), user.getId(), "TOTP_DISABLED", "user", user.getId().toString(), null, null);
+
+        return toResponse(user);
+    }
+
+    /** Segundo paso del acceso: valida el desafio y el codigo, y emite la sesion. */
+    public TokenResponse verifyTotp(TotpVerifyRequest request, String ip, String userAgent) {
+        String userId = tokenService.verifyTotpChallenge(request.challengeToken());
+        User user = users.findById(parseUuid(userId, "INVALID_CHALLENGE"))
+                .orElseThrow(() -> DomainException.unauthorized(
+                        "INVALID_CHALLENGE", "El desafio de verificacion no es valido"));
+
+        if (!user.isTotpEnabled()
+                || !totpService.verify(totpCipher.decrypt(user.getTotpSecret()), request.code(), Instant.now())) {
+            auditService.record(
+                    user.getTenant().getId(), user.getId(), "TOTP_FAILED", "user", user.getId().toString(), ip, userAgent);
+            throw DomainException.unauthorized("INVALID_TOTP", "El codigo de verificacion no es valido");
+        }
+
+        return completeLogin(user, ip, userAgent);
+    }
+
+    private User requireUser(String actorId) {
+        return users.findById(parseUuid(actorId, "USER_NOT_FOUND"))
+                .orElseThrow(() -> DomainException.notFound("USER_NOT_FOUND", "Usuario no encontrado"));
     }
 
     @Transactional
@@ -404,7 +504,8 @@ public class AuthService {
                 user.getRole().name(),
                 user.getStatus().name(),
                 user.getTenant().getId().toString(),
-                user.getTenant().getName());
+                user.getTenant().getName(),
+                user.isTotpEnabled());
     }
 
     private UUID parseUuid(String value, String errorCode) {

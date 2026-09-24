@@ -52,6 +52,13 @@ public class User {
     @Column(name = "locked_until")
     private Instant lockedUntil;
 
+    /** Secreto TOTP cifrado (ADR-0015); null si el segundo factor no se configuro. */
+    @Column(name = "totp_secret", length = 200)
+    private String totpSecret;
+
+    @Column(name = "totp_enabled", nullable = false)
+    private boolean totpEnabled;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -104,6 +111,22 @@ public class User {
 
     public void setFullName(String fullName) {
         this.fullName = fullName;
+    }
+
+    public String getTotpSecret() {
+        return totpSecret;
+    }
+
+    public void setTotpSecret(String totpSecret) {
+        this.totpSecret = totpSecret;
+    }
+
+    public boolean isTotpEnabled() {
+        return totpEnabled;
+    }
+
+    public void setTotpEnabled(boolean totpEnabled) {
+        this.totpEnabled = totpEnabled;
     }
 
     public UserRole getRole() {

@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Propiedades de configuracion del servicio, agrupadas bajo el prefijo {@code kubo}.
  */
 @ConfigurationProperties(prefix = "kubo")
-public record KuboProperties(Jwt jwt, Seed seed, Auth auth, Mail mail) {
+public record KuboProperties(Jwt jwt, Seed seed, Auth auth, Mail mail, Totp totp) {
 
     public record Jwt(
             String issuer,
@@ -25,6 +25,10 @@ public record KuboProperties(Jwt jwt, Seed seed, Auth auth, Mail mail) {
 
     /** Politicas de autenticacion: bloqueo por intentos y vigencia del enlace de recuperacion. */
     public record Auth(int maxFailedAttempts, int lockMinutes, int resetTokenMinutes) {
+    }
+
+    /** Segundo factor TOTP (P-30): llave con la que se cifra el secreto en reposo. */
+    public record Totp(String encryptionKey) {
     }
 
     /** Transporte de correo: `log` (buzon de demostracion) o `smtp` (servidor real). */

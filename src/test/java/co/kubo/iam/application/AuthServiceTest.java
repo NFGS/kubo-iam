@@ -11,8 +11,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import co.kubo.iam.application.dto.AuthDtos.LoginRequest;
+import co.kubo.iam.application.dto.AuthDtos.LoginResult;
 import co.kubo.iam.application.dto.AuthDtos.TokenResponse;
 import co.kubo.iam.config.KuboProperties;
+import co.kubo.iam.config.TotpSecretCipher;
 import co.kubo.iam.domain.Tenant;
 import co.kubo.iam.domain.User;
 import co.kubo.iam.domain.UserRole;
@@ -66,9 +68,11 @@ class AuthServiceTest {
                 new KuboProperties.Seed(false, "admin@kubo.local", "Admin123!", "Tienda"),
                 new KuboProperties.Auth(5, 15, 30),
                 new KuboProperties.Mail("log", "no-responder@kubo.local", "http://localhost/recuperar",
-                        "", 587, "", "", true));
+                        "", 587, "", "", true),
+                new KuboProperties.Totp("a".repeat(64)));
 
-        service = new AuthService(users, tenants, refreshTokens, encoder, tokenService, audit, incidents, properties);
+        service = new AuthService(users, tenants, refreshTokens, encoder, tokenService, audit, incidents, properties,
+                new TotpService(), new TotpSecretCipher(properties));
 
         Tenant tenant = new Tenant(UUID.randomUUID(), "Tienda Test", "tienda-test", "community", "America/Bogota", "retail", Instant.now());
         user = new User(
@@ -137,8 +141,9 @@ class AuthServiceTest {
         when(tokenService.newRefreshToken()).thenReturn("refresh");
         when(tokenService.hashToken("refresh")).thenReturn("hash");
 
-        TokenResponse response =
+        LoginResult resultado =
                 service.login(new LoginRequest("dueno@test.local", "Clave1!"), "127.0.0.1", "junit");
+        TokenResponse response = ((LoginResult.Tokens) resultado).response();
 
         assertThat(response.accessToken()).isEqualTo("access");
         assertThat(response.refreshToken()).isEqualTo("refresh");

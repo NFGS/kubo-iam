@@ -63,7 +63,8 @@ class PasswordResetServiceTest {
                 new KuboProperties.Seed(false, "admin@kubo.local", "Admin123!", "Tienda"),
                 new KuboProperties.Auth(5, 15, 30),
                 new KuboProperties.Mail("log", "no-responder@kubo.local", "http://localhost/recuperar",
-                        "", 587, "", "", true));
+                        "", 587, "", "", true),
+                new KuboProperties.Totp("a".repeat(64)));
 
         service = new PasswordResetService(
                 users, tokens, refreshTokens, encoder, tokenService, mail, audit, properties);

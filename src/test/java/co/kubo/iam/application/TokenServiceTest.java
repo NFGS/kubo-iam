@@ -1,6 +1,7 @@
 package co.kubo.iam.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import co.kubo.iam.config.KuboProperties;
 import co.kubo.iam.domain.Tenant;
@@ -25,7 +26,8 @@ class TokenServiceTest {
                 new KuboProperties.Seed(false, "admin@kubo.local", "Admin123!", "Tienda"),
                 new KuboProperties.Auth(5, 15, 30),
                 new KuboProperties.Mail("log", "no-responder@kubo.local", "http://localhost:3000/reset",
-                        "", 587, "", "", true));
+                        "", 587, "", "", true),
+                new KuboProperties.Totp("a".repeat(64)));
         tokenService = new TokenService(properties);
         tokenService.init();
 
@@ -62,6 +64,21 @@ class TokenServiceTest {
 
         assertThat(payload).contains("\"tenant_timezone\":\"America/Mexico_City\"");
         assertThat(payload).contains("\"tenant_vertical\":\"retail\"");
+    }
+
+    @Test
+    @DisplayName("El desafio del segundo factor se firma y se verifica (P-30)")
+    void desafioDelSegundoFactor() {
+        String desafio = tokenService.signTotpChallenge(user);
+
+        assertThat(desafio).isNotBlank();
+        assertThat(tokenService.verifyTotpChallenge(desafio)).isEqualTo(user.getId().toString());
+
+        // Un token de acceso no sirve como desafio (el tipo es distinto).
+        String access = tokenService.signAccessToken(user);
+        assertThatThrownBy(() -> tokenService.verifyTotpChallenge(access)).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> tokenService.verifyTotpChallenge("no-es-un-jwt"))
+                .isInstanceOf(RuntimeException.class);
     }
 
     @Test

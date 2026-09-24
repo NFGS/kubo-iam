@@ -48,6 +48,9 @@ class RlsIntegrationTest {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", () -> "kubo_iam");
         registry.add("spring.datasource.password", () -> "kubo_iam_test");
+        // El cifrado del secreto TOTP exige una llave real (P-30): en pruebas,
+        // una fija de 64 hexadecimales.
+        registry.add("kubo.totp.encryption-key", () -> "a".repeat(64));
     }
 
     @Autowired

@@ -5,12 +5,17 @@ import co.kubo.iam.application.PasswordResetService;
 import co.kubo.iam.application.TokenService;
 import co.kubo.iam.application.dto.AuthDtos.ForgotPasswordRequest;
 import co.kubo.iam.application.dto.AuthDtos.LoginRequest;
+import co.kubo.iam.application.dto.AuthDtos.LoginResult;
+import co.kubo.iam.application.dto.AuthDtos.TotpChallengeResponse;
+import co.kubo.iam.application.dto.AuthDtos.TotpCodeRequest;
+import co.kubo.iam.application.dto.AuthDtos.TotpSetupResponse;
+import co.kubo.iam.application.dto.AuthDtos.TotpVerifyRequest;
+import co.kubo.iam.application.dto.AuthDtos.UserResponse;
 import co.kubo.iam.application.dto.AuthDtos.LogoutRequest;
 import co.kubo.iam.application.dto.AuthDtos.RefreshRequest;
 import co.kubo.iam.application.dto.AuthDtos.RegisterRequest;
 import co.kubo.iam.application.dto.AuthDtos.ResetPasswordRequest;
 import co.kubo.iam.application.dto.AuthDtos.TokenResponse;
-import co.kubo.iam.application.dto.AuthDtos.UserResponse;
 import co.kubo.iam.config.InternalAuthFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -44,9 +49,46 @@ public class AuthController {
         return authService.register(request, clientIp(http), http.getHeader("User-Agent"));
     }
 
+    /**
+     * Inicia sesion. Si el usuario tiene segundo factor, responde 200 con
+     * `totpRequired` y un desafio en lugar de la sesion (P-30).
+     */
     @PostMapping("/login")
-    public TokenResponse login(@Valid @RequestBody LoginRequest request, HttpServletRequest http) {
-        return authService.login(request, clientIp(http), http.getHeader("User-Agent"));
+    public ResponseEntity<Object> login(@Valid @RequestBody LoginRequest request, HttpServletRequest http) {
+        LoginResult result = authService.login(request, clientIp(http), http.getHeader("User-Agent"));
+
+        return switch (result) {
+            case LoginResult.Tokens tokens -> ResponseEntity.ok(tokens.response());
+            case LoginResult.Totp totp -> ResponseEntity.ok(totp.response());
+        };
+    }
+
+    /** Segundo paso del acceso: desafio + codigo TOTP a cambio de la sesion. */
+    @PostMapping("/totp/verify")
+    public TokenResponse verifyTotp(@Valid @RequestBody TotpVerifyRequest request, HttpServletRequest http) {
+        return authService.verifyTotp(request, clientIp(http), http.getHeader("User-Agent"));
+    }
+
+    /** Genera el secreto del segundo factor (queda pendiente de confirmar). */
+    @PostMapping("/totp/setup")
+    public TotpSetupResponse totpSetup(@RequestHeader(InternalAuthFilter.HEADER_USER_ID) String userId) {
+        return authService.totpSetup(userId);
+    }
+
+    /** Activa el segundo factor con el primer codigo valido. */
+    @PostMapping("/totp/enable")
+    public UserResponse totpEnable(
+            @RequestHeader(InternalAuthFilter.HEADER_USER_ID) String userId,
+            @Valid @RequestBody TotpCodeRequest request) {
+        return authService.totpEnable(userId, request.code());
+    }
+
+    /** Desactiva el segundo factor con un codigo vigente. */
+    @PostMapping("/totp/disable")
+    public UserResponse totpDisable(
+            @RequestHeader(InternalAuthFilter.HEADER_USER_ID) String userId,
+            @Valid @RequestBody TotpCodeRequest request) {
+        return authService.totpDisable(userId, request.code());
     }
 
     @PostMapping("/refresh")

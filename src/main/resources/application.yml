@@ -39,6 +39,9 @@ kubo:
     admin-email: ${KUBO_ADMIN_EMAIL:admin@kubo.local}
     admin-password: ${KUBO_ADMIN_PASSWORD:Admin123!}
     tenant-name: ${KUBO_TENANT_NAME:Tienda La Esquina}
+  totp:
+    # Sin llave el servicio no arranca: el secreto TOTP no puede quedar en claro.
+    encryption-key: ${KUBO_TOTP_ENCRYPTION_KEY:}
   auth:
     max-failed-attempts: ${KUBO_AUTH_MAX_FAILED_ATTEMPTS:5}
     lock-minutes: ${KUBO_AUTH_LOCK_MINUTES:15}

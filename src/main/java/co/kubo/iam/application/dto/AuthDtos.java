@@ -56,7 +56,29 @@ public final class AuthDtos {
             String role,
             String status,
             String tenantId,
-            String tenantName) {
+            String tenantName,
+            boolean totpEnabled) {
+    }
+
+    /** Resultado del acceso: sesion emitida o desafio del segundo factor (P-30). */
+    public sealed interface LoginResult permits LoginResult.Tokens, LoginResult.Totp {
+        record Tokens(TokenResponse response) implements LoginResult {
+        }
+
+        record Totp(TotpChallengeResponse response) implements LoginResult {
+        }
+    }
+
+    public record TotpChallengeResponse(boolean totpRequired, String challengeToken) {
+    }
+
+    public record TotpSetupResponse(String secret, String otpauthUri) {
+    }
+
+    public record TotpCodeRequest(@NotBlank String code) {
+    }
+
+    public record TotpVerifyRequest(@NotBlank String challengeToken, @NotBlank String code) {
     }
 
     /** Cambio de perfil del negocio: zona horaria y/o vertical (ADR-0012, ADR-0013). */

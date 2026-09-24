@@ -3,6 +3,8 @@ package co.kubo.iam.application;
 import co.kubo.iam.config.KuboProperties;
 import co.kubo.iam.domain.User;
 import com.nimbusds.jose.JOSEObjectType;
+import com.nimbusds.jose.JWSVerifier;
+import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.JWSSigner;
@@ -110,6 +112,57 @@ public class TokenService {
             return jwt.serialize();
         } catch (Exception exception) {
             throw new IllegalStateException("No fue posible firmar el access token", exception);
+        }
+    }
+
+    /**
+     * Desafio del segundo factor (P-30): token firmado de 5 minutos con tipo
+     * propio. El gateway solo acepta `typ=access`, de modo que este token no
+     * sirve como credencial de API.
+     */
+    public String signTotpChallenge(User user) {
+        try {
+            Instant now = Instant.now();
+            JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                    .subject(user.getId().toString())
+                    .issuer(properties.jwt().issuer())
+                    .audience(properties.jwt().audience())
+                    .issueTime(Date.from(now))
+                    .expirationTime(Date.from(now.plus(Duration.ofMinutes(5))))
+                    .jwtID(UUID.randomUUID().toString())
+                    .claim("typ", "totp")
+                    .build();
+
+            SignedJWT jwt = new SignedJWT(
+                    new JWSHeader.Builder(JWSAlgorithm.RS256)
+                            .keyID(rsaKey.getKeyID())
+                            .type(JOSEObjectType.JWT)
+                            .build(),
+                    claims);
+            jwt.sign(signer);
+            return jwt.serialize();
+        } catch (Exception exception) {
+            throw new IllegalStateException("No fue posible firmar el desafio de segundo factor", exception);
+        }
+    }
+
+    /** Devuelve el id del usuario del desafio, o lanza si no es valido. */
+    public String verifyTotpChallenge(String token) {
+        try {
+            SignedJWT jwt = SignedJWT.parse(token);
+            JWSVerifier verifier = new RSASSAVerifier(rsaKey.toRSAPublicKey());
+
+            if (!jwt.verify(verifier)
+                    || !"totp".equals(jwt.getJWTClaimsSet().getStringClaim("typ"))
+                    || !properties.jwt().issuer().equals(jwt.getJWTClaimsSet().getIssuer())
+                    || jwt.getJWTClaimsSet().getExpirationTime().before(new Date())) {
+                throw new IllegalArgumentException("desafio invalido");
+            }
+
+            return jwt.getJWTClaimsSet().getSubject();
+        } catch (Exception exception) {
+            throw DomainException.unauthorized(
+                    "INVALID_CHALLENGE", "El desafio de verificacion no es valido o expiro");
         }
     }
 

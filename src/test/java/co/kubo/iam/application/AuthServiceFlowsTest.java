@@ -9,7 +9,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import co.kubo.iam.application.dto.AuthDtos.LoginRequest;
+import co.kubo.iam.application.dto.AuthDtos.LoginResult;
 import co.kubo.iam.application.dto.AuthDtos.LogoutRequest;
+import co.kubo.iam.application.dto.AuthDtos.TotpSetupResponse;
+import co.kubo.iam.application.dto.AuthDtos.TotpVerifyRequest;
 import co.kubo.iam.application.dto.AuthDtos.RefreshRequest;
 import co.kubo.iam.application.dto.AuthDtos.RegisterRequest;
 import co.kubo.iam.application.dto.AuthDtos.TenantResponse;
@@ -18,6 +22,8 @@ import co.kubo.iam.application.dto.AuthDtos.UpdateTenantRequest;
 import co.kubo.iam.application.dto.AuthDtos.UpdateUserRequest;
 import co.kubo.iam.application.dto.AuthDtos.UserResponse;
 import co.kubo.iam.config.KuboProperties;
+import co.kubo.iam.config.TotpSecretCipher;
+import co.kubo.iam.config.TotpSecretCipher;
 import co.kubo.iam.domain.RefreshToken;
 import co.kubo.iam.domain.Tenant;
 import co.kubo.iam.domain.User;
@@ -67,17 +73,20 @@ class AuthServiceFlowsTest {
 
     private AuthService service;
     private User user;
+    private KuboProperties properties;
 
     @BeforeEach
     void setUp() {
-        KuboProperties properties = new KuboProperties(
+        properties = new KuboProperties(
                 new KuboProperties.Jwt("kubo-iam", "kubo-api", 15, 7, ""),
                 new KuboProperties.Seed(false, "admin@kubo.local", "Admin123!", "Tienda"),
                 new KuboProperties.Auth(5, 15, 30),
                 new KuboProperties.Mail("log", "no-responder@kubo.local", "http://localhost/recuperar",
-                        "", 587, "", "", true));
+                        "", 587, "", "", true),
+                new KuboProperties.Totp("a".repeat(64)));
 
-        service = new AuthService(users, tenants, refreshTokens, encoder, tokenService, audit, incidents, properties);
+        service = new AuthService(users, tenants, refreshTokens, encoder, tokenService, audit, incidents, properties,
+                new TotpService(), new TotpSecretCipher(properties));
 
         Tenant tenant = new Tenant(UUID.randomUUID(), "Tienda Test", "tienda-test", "community", "America/Bogota", "retail", Instant.now());
         user = new User(
@@ -242,6 +251,91 @@ class AuthServiceFlowsTest {
                 .isInstanceOf(DomainException.class)
                 .extracting(exception -> ((DomainException) exception).getCode())
                 .isEqualTo("INVALID_TIMEZONE");
+    }
+
+    @Test
+    @DisplayName("Con segundo factor el acceso devuelve un desafio, no la sesion (P-30)")
+    void loginConSegundoFactor() {
+        String secreto = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+        user.setTotpSecret(new TotpSecretCipher(properties).encrypt(secreto));
+        user.setTotpEnabled(true);
+
+        when(users.findByEmailIgnoreCase("dueno@test.local")).thenReturn(Optional.of(user));
+        when(encoder.matches(anyString(), anyString())).thenReturn(true);
+        when(tokenService.signTotpChallenge(user)).thenReturn("desafio-firmado");
+
+        LoginResult resultado =
+                service.login(new LoginRequest("dueno@test.local", "Clave123!"), "127.0.0.1", "junit");
+
+        assertThat(resultado).isInstanceOf(LoginResult.Totp.class);
+        assertThat(((LoginResult.Totp) resultado).response().challengeToken()).isEqualTo("desafio-firmado");
+        verify(users, never()).save(any(User.class));
+        verify(audit).record(any(), any(), eq("TOTP_CHALLENGED"), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("El codigo valido cierra el acceso y uno invalido lo rechaza (P-30)")
+    void verificacionDelSegundoFactor() {
+        String secreto = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+        user.setTotpSecret(new TotpSecretCipher(properties).encrypt(secreto));
+        user.setTotpEnabled(true);
+
+        when(tokenService.verifyTotpChallenge("desafio")).thenReturn(user.getId().toString());
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
+        when(users.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenService.signAccessToken(any(User.class))).thenReturn("access");
+        when(tokenService.newRefreshToken()).thenReturn("refresh");
+        when(tokenService.hashToken("refresh")).thenReturn("hash-refresh");
+        when(refreshTokens.save(any(RefreshToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        String codigo = new TotpService().codeAt(secreto, Instant.now());
+        TokenResponse sesion = service.verifyTotp(new TotpVerifyRequest("desafio", codigo), "127.0.0.1", "junit");
+
+        assertThat(sesion.accessToken()).isEqualTo("access");
+
+        assertThatThrownBy(() -> service.verifyTotp(new TotpVerifyRequest("desafio", "000000"), "127.0.0.1", "junit"))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("INVALID_TOTP");
+    }
+
+    @Test
+    @DisplayName("El segundo factor se configura, activa y desactiva (P-30)")
+    void cicloDelSegundoFactor() {
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
+        when(users.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TotpSetupResponse setup = service.totpSetup(user.getId().toString());
+        assertThat(setup.secret()).isNotBlank();
+        assertThat(setup.otpauthUri()).contains(setup.secret());
+        assertThat(user.isTotpEnabled()).isFalse();
+
+        assertThatThrownBy(() -> service.totpEnable(user.getId().toString(), "000000"))
+                .isInstanceOf(DomainException.class);
+
+        String codigo = new TotpService().codeAt(setup.secret(), Instant.now());
+        service.totpEnable(user.getId().toString(), codigo);
+        assertThat(user.isTotpEnabled()).isTrue();
+
+        service.totpDisable(user.getId().toString(), codigo);
+        assertThat(user.isTotpEnabled()).isFalse();
+        assertThat(user.getTotpSecret()).isNull();
+    }
+
+    @Test
+    @DisplayName("Activar o desactivar el segundo factor sin el paso previo se rechaza (P-30)")
+    void segundoFactorSinEstado() {
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> service.totpEnable(user.getId().toString(), "123456"))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("TOTP_NOT_SETUP");
+
+        assertThatThrownBy(() -> service.totpDisable(user.getId().toString(), "123456"))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("TOTP_NOT_ENABLED");
     }
 
     @Test
