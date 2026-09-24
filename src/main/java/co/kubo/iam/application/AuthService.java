@@ -258,6 +258,27 @@ public class AuthService {
         User target = users.findById(parseUuid(targetId, "USER_NOT_FOUND"))
                 .orElseThrow(() -> DomainException.notFound("USER_NOT_FOUND", "Usuario no encontrado"));
 
+        // Un administrador no puede quitarse a si mismo el rol ni deshabilitarse:
+        // dejaria al negocio sin quien gestione usuarios y sin ruta de recuperacion
+        // dentro del producto. Otro administrador si puede hacerlo.
+        boolean isSelf = target.getId().equals(actor.getId());
+
+        if (isSelf && request.role() != null && !request.role().isBlank()) {
+            UserRole requested = parseRole(request.role());
+            boolean keepsAdmin = requested == UserRole.OWNER || requested == UserRole.ADMIN;
+            if (!keepsAdmin) {
+                throw DomainException.conflict(
+                        "CANNOT_DEMOTE_SELF", "No puedes quitarte a ti mismo el rol de administrador");
+            }
+        }
+
+        if (isSelf && request.status() != null && !request.status().isBlank()) {
+            UserStatus requested = parseStatus(request.status());
+            if (requested != UserStatus.ACTIVE) {
+                throw DomainException.conflict("CANNOT_DISABLE_SELF", "No puedes deshabilitar tu propio usuario");
+            }
+        }
+
         if (request.fullName() != null && !request.fullName().isBlank()) {
             target.setFullName(request.fullName().trim());
         }

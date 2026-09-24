@@ -13,6 +13,8 @@ import co.kubo.iam.application.dto.AuthDtos.LogoutRequest;
 import co.kubo.iam.application.dto.AuthDtos.RefreshRequest;
 import co.kubo.iam.application.dto.AuthDtos.RegisterRequest;
 import co.kubo.iam.application.dto.AuthDtos.TokenResponse;
+import co.kubo.iam.application.dto.AuthDtos.UpdateUserRequest;
+import co.kubo.iam.application.dto.AuthDtos.UserResponse;
 import co.kubo.iam.config.KuboProperties;
 import co.kubo.iam.domain.RefreshToken;
 import co.kubo.iam.domain.Tenant;
@@ -213,5 +215,58 @@ class AuthServiceFlowsTest {
                 .isInstanceOf(DomainException.class)
                 .extracting(exception -> ((DomainException) exception).getCode())
                 .isEqualTo("USER_NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("Un administrador no puede degradarse ni deshabilitarse a si mismo")
+    void autoproteccionDelAdministrador() {
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> service.updateUser(
+                user.getId().toString(), user.getId().toString(), new UpdateUserRequest(null, "SELLER", null)))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("CANNOT_DEMOTE_SELF");
+
+        assertThatThrownBy(() -> service.updateUser(
+                user.getId().toString(), user.getId().toString(), new UpdateUserRequest(null, null, "DISABLED")))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("CANNOT_DISABLE_SELF");
+
+        verify(users, never()).save(any(User.class));
+    }
+
+    @Test
+    @DisplayName("El administrador si puede ajustar su nombre o confirmar su rol")
+    void autoproteccionPermiteCambiosInocuos() {
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
+        when(users.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserResponse response = service.updateUser(
+                user.getId().toString(), user.getId().toString(),
+                new UpdateUserRequest("Dueno Renombrado", "OWNER", "ACTIVE"));
+
+        assertThat(response.fullName()).isEqualTo("Dueno Renombrado");
+        assertThat(response.role()).isEqualTo("OWNER");
+    }
+
+    @Test
+    @DisplayName("Un administrador gestiona a otro usuario sin restriccion")
+    void adminGestionaAOtro() {
+        User otro = new User(
+                UUID.randomUUID(), user.getTenant(), "vendedor@test.local", "hash", "Vendedor",
+                UserRole.SELLER, UserStatus.ACTIVE, Instant.now());
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
+        when(users.findById(otro.getId())).thenReturn(Optional.of(otro));
+        when(users.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserResponse response = service.updateUser(
+                user.getId().toString(), otro.getId().toString(),
+                new UpdateUserRequest(null, "ADMIN", "DISABLED"));
+
+        assertThat(response.role()).isEqualTo("ADMIN");
+        assertThat(response.status()).isEqualTo("DISABLED");
+        verify(audit).record(any(), any(), eq("USER_UPDATED"), any(), any(), any(), any());
     }
 }
