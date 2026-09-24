@@ -91,3 +91,14 @@ mvn test
   fija `app.tenant_id` por petición; las operaciones de identidad (login por
   correo, rotación, cadena de auditoría global, semilla) usan la marca
   `app.system`. Ver `kubo-docs/adr/ADR-0010-rls-activo.md`.
+
+## Observabilidad y calidad (Fase 2)
+
+- **Trazas OpenTelemetry**: `spring-boot-starter-opentelemetry` exporta al
+  collector (`OTEL_EXPORTER_OTLP_ENDPOINT`); sin collector el servicio arranca
+  igual y no exporta métricas (solo trazas).
+- **Pruebas de integración**: `RlsIntegrationTest` levanta PostgreSQL con
+  Testcontainers, aplica las migraciones Flyway y verifica RLS y la cadena de
+  auditoría contra un motor real (rol sin superusuario, como en producción).
+- **Cobertura**: JaCoCo con gate de **80 %** en `co.kubo.iam.application` y
+  `co.kubo.iam.domain` (`mvn verify`); hoy 85.5 %.

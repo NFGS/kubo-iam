@@ -61,6 +61,23 @@ management:
   endpoint:
     health:
       show-details: never
+  # Trazas OTLP hacia el collector (P-07). Sin collector la aplicacion arranca
+  # igual: el exportador falla en silencio y no afecta al servicio.
+  tracing:
+    sampling:
+      probability: ${KUBO_TRACING_SAMPLING:1.0}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
+    # Solo trazas: el pipeline del collector no procesa metricas.
+    metrics:
+      export:
+        enabled: false
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
 
 logging:
   level:
