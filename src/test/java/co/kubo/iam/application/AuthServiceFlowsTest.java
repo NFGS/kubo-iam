@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import co.kubo.iam.application.dto.AuthDtos.CreateUserRequest;
 import co.kubo.iam.application.dto.AuthDtos.LoginRequest;
 import co.kubo.iam.application.dto.AuthDtos.LoginResult;
 import co.kubo.iam.application.dto.AuthDtos.LogoutRequest;
@@ -251,6 +252,43 @@ class AuthServiceFlowsTest {
                 .isInstanceOf(DomainException.class)
                 .extracting(exception -> ((DomainException) exception).getCode())
                 .isEqualTo("INVALID_TIMEZONE");
+    }
+
+    @Test
+    @DisplayName("El cupo del plan limita los usuarios activos (ADR-0021)")
+    void cupoDelPlan() {
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
+
+        // El negocio ya tiene los 5 usuarios activos del plan community.
+        when(users.countByTenantIdAndStatus(user.getTenant().getId(), UserStatus.ACTIVE)).thenReturn(5L);
+
+        assertThatThrownBy(() -> service.createUser(
+                user.getId().toString(),
+                new CreateUserRequest("Nuevo Vendedor", "nuevo@test.local", "Clave123!", "SELLER")))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("PLAN_LIMIT_REACHED");
+
+        verify(users, never()).save(any(User.class));
+    }
+
+    @Test
+    @DisplayName("Un negocio suspendido no inicia sesion pero conserva sus datos (ADR-0021)")
+    void negocioSuspendido() {
+        user.getTenant().setStatus("SUSPENDED");
+
+        when(users.findByEmailIgnoreCase("dueno@test.local")).thenReturn(Optional.of(user));
+        when(encoder.matches(anyString(), anyString())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.login(
+                new LoginRequest("dueno@test.local", "Clave123!"), "127.0.0.1", "junit"))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("TENANT_SUSPENDED");
+
+        // Los datos siguen ahi: el estado no toca la informacion del negocio.
+        assertThat(user.getTenant().getStatus()).isEqualTo("SUSPENDED");
+        verify(audit).record(any(), any(), eq("TENANT_SUSPENDED"), any(), any(), any(), any());
     }
 
     @Test

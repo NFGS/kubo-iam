@@ -35,6 +35,12 @@ public class TenantController {
         return new TenantItem(authService.currentTenant(userId));
     }
 
+    /** Catalogo de planes comerciales (ADR-0021). */
+    @GetMapping("/plans")
+    public java.util.List<co.kubo.iam.application.dto.AuthDtos.TenantResponse.PlanInfo> plans() {
+        return authService.planes();
+    }
+
     /** Cambia la zona horaria y/o el vertical. Solo propietario o administrador. */
     @PatchMapping("/me")
     public TenantItem update(

@@ -93,7 +93,14 @@ public final class AuthDtos {
             String slug,
             String plan,
             String timezone,
-            String vertical) {
+            String vertical,
+            String status,
+            int maxUsers,
+            int maxWarehouses) {
+
+        /** Ficha de un plan para la interfaz (ADR-0021). */
+        public record PlanInfo(String code, int maxUsers, int maxWarehouses) {
+        }
     }
 
     /** Envoltura estandar de la API: {"data": ...}, igual que el resto de servicios. */

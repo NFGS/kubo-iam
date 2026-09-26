@@ -16,6 +16,7 @@ import co.kubo.iam.application.dto.AuthDtos.UpdateTenantRequest;
 import co.kubo.iam.application.dto.AuthDtos.UserResponse;
 import co.kubo.iam.config.KuboProperties;
 import co.kubo.iam.config.TotpSecretCipher;
+import co.kubo.iam.domain.Plan;
 import co.kubo.iam.domain.RefreshToken;
 import co.kubo.iam.domain.Tenant;
 import co.kubo.iam.domain.User;
@@ -29,6 +30,7 @@ import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -145,6 +147,16 @@ public class AuthService {
 
         if (user.getStatus() != UserStatus.ACTIVE) {
             throw DomainException.unauthorized("USER_DISABLED", "El usuario esta deshabilitado");
+        }
+
+        // Negocio suspendido (ADR-0021): la contrasena es correcta, pero la
+        // relacion comercial no; sus datos siguen intactos y exportables.
+        if (user.getTenant().isSuspended()) {
+            auditService.record(
+                    user.getTenant().getId(), user.getId(), "TENANT_SUSPENDED", "tenant",
+                    user.getTenant().getId().toString(), ip, userAgent);
+            throw DomainException.forbidden(
+                    "TENANT_SUSPENDED", "El negocio esta suspendido; contacte al operador");
         }
 
         // Con el segundo factor activo, la contrasena correcta solo abre el
@@ -341,6 +353,18 @@ public class AuthService {
             throw DomainException.conflict("EMAIL_ALREADY_EXISTS", "El correo ya esta registrado");
         }
 
+        // Cupo del plan (ADR-0021): se avisa con el limite y el uso, nunca
+        // borrando datos. Los deshabilitados no ocupan asiento.
+        Plan plan = Plan.byCodeOrDefault(actor.getTenant().getPlan());
+        long activos = users.countByTenantIdAndStatus(actor.getTenant().getId(), UserStatus.ACTIVE);
+
+        if (activos >= plan.maxUsers()) {
+            throw DomainException.conflict(
+                    "PLAN_LIMIT_REACHED",
+                    "El plan " + plan.code() + " permite " + plan.maxUsers()
+                            + " usuarios activos y el negocio ya tiene " + activos);
+        }
+
         User user = users.save(new User(
                 UUID.randomUUID(),
                 actor.getTenant(),
@@ -487,13 +511,25 @@ public class AuthService {
     }
 
     private TenantResponse toTenantResponse(Tenant tenant) {
+        Plan plan = Plan.byCodeOrDefault(tenant.getPlan());
+
         return new TenantResponse(
                 tenant.getId().toString(),
                 tenant.getName(),
                 tenant.getSlug(),
                 tenant.getPlan(),
                 tenant.getTimezone(),
-                tenant.getVertical());
+                tenant.getVertical(),
+                tenant.getStatus(),
+                plan.maxUsers(),
+                plan.maxWarehouses());
+    }
+
+    /** Catalogo de planes para la interfaz (ADR-0021). */
+    public List<TenantResponse.PlanInfo> planes() {
+        return Arrays.stream(Plan.values())
+                .map(plan -> new TenantResponse.PlanInfo(plan.code(), plan.maxUsers(), plan.maxWarehouses()))
+                .toList();
     }
 
     private UserResponse toResponse(User user) {

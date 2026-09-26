@@ -32,6 +32,10 @@ public class Tenant {
     @Column(nullable = false, length = 40)
     private String vertical;
 
+    /** Estado comercial (ADR-0021): un negocio suspendido no inicia sesion. */
+    @Column(nullable = false, length = 20)
+    private String status = "ACTIVE";
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -82,6 +86,18 @@ public class Tenant {
 
     public void setTimezone(String timezone) {
         this.timezone = timezone;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public boolean isSuspended() {
+        return "SUSPENDED".equals(status);
     }
 
     public String getVertical() {

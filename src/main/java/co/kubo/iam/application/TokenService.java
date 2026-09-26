@@ -100,6 +100,8 @@ public class TokenService {
                     .claim("tenant_timezone", user.getTenant().getTimezone())
                     // Paquete de configuracion activo (ADR-0013, P-17).
                     .claim("tenant_vertical", user.getTenant().getVertical())
+                    // Plan comercial (ADR-0021): cada servicio aplica sus cupos.
+                    .claim("tenant_plan", user.getTenant().getPlan())
                     .build();
 
             SignedJWT jwt = new SignedJWT(

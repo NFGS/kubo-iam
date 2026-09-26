@@ -64,6 +64,7 @@ class TokenServiceTest {
 
         assertThat(payload).contains("\"tenant_timezone\":\"America/Mexico_City\"");
         assertThat(payload).contains("\"tenant_vertical\":\"retail\"");
+        assertThat(payload).contains("\"tenant_plan\":\"community\"");
     }
 
     @Test

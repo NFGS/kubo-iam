@@ -20,4 +20,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Page<User> findByTenantId(UUID tenantId, Pageable pageable);
 
     long countByTenantId(UUID tenantId);
+
+    /** Cupo del plan: los usuarios deshabilitados no ocupan asiento (ADR-0021). */
+    long countByTenantIdAndStatus(UUID tenantId, co.kubo.iam.domain.UserStatus status);
 }
