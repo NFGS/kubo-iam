@@ -2,6 +2,14 @@ server:
   port: ${PORT:8081}
   servlet:
     context-path: /api/v1
+  # Malla interna (P-28, ADR-0020): HTTPS exigiendo el certificado del cliente.
+  # Se enciende con KUBO_INTERNAL_TLS=true; sin la bandera el servicio sirve HTTP.
+  ssl:
+    enabled: ${KUBO_INTERNAL_TLS:false}
+    certificate: file:${KUBO_TLS_CERT:/certs/iam.crt}
+    certificate-private-key: file:${KUBO_TLS_KEY:/certs/iam.key}
+    trust-certificate: file:${KUBO_TLS_CA:/certs/ca.crt}
+    client-auth: need
 
 spring:
   application:
