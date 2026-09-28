@@ -47,6 +47,10 @@ kubo:
     admin-email: ${KUBO_ADMIN_EMAIL:admin@kubo.local}
     admin-password: ${KUBO_ADMIN_PASSWORD:Admin123!}
     tenant-name: ${KUBO_TENANT_NAME:Tienda La Esquina}
+  payments:
+    # Secreto compartido con el proveedor para firmar sus webhooks (HMAC-SHA256).
+    # Vacio = webhook deshabilitado (el cobro manual del panel sigue disponible).
+    webhook-secret: ${KUBO_PAYMENTS_WEBHOOK_SECRET:}
   totp:
     # Sin llave el servicio no arranca: el secreto TOTP no puede quedar en claro.
     encryption-key: ${KUBO_TOTP_ENCRYPTION_KEY:}

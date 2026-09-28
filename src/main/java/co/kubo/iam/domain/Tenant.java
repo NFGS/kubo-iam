@@ -84,6 +84,11 @@ public class Tenant {
         return plan;
     }
 
+    /** Un pago puede cambiar de plan (F6.6): la renovacion aplica el plan pagado. */
+    public void setPlan(String plan) {
+        this.plan = plan;
+    }
+
     public String getTimezone() {
         return timezone;
     }

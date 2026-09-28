@@ -26,6 +26,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/auth/**",
+                                // Webhook del proveedor de pagos (F6.6): publico,
+                                // su autenticidad la da la firma HMAC del cuerpo.
+                                "/webhooks/**",
                                 "/health",
                                 "/actuator/health",
                                 "/actuator/info")
