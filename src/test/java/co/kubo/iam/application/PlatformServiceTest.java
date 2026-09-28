@@ -67,13 +67,14 @@ class PlatformServiceTest {
     private JdbcTemplate jdbc;
 
     private final TotpService totp = new TotpService();
+    private TotpSecretCipher cipher;
     private PlatformService service;
     private PlatformAdmin admin;
     private Tenant tenant;
 
     @BeforeEach
     void setUp() {
-        TotpSecretCipher cipher = new TotpSecretCipher(properties());
+        cipher = new TotpSecretCipher(properties());
 
         service = new PlatformService(
                 admins, platformAudit, tenants, users, encoder, tokenService, totp, cipher, jdbc);
@@ -125,6 +126,28 @@ class PlatformServiceTest {
 
         assertThat(token.accessToken()).isEqualTo("token-plataforma");
         assertThat(token.email()).isEqualTo("operador@kubo.local");
+    }
+
+    @Test
+    @DisplayName("Rotar el segundo factor invalida el secreto viejo y entrega la URI una vez")
+    void rotarSegundoFactor() {
+        when(admins.findById(admin.getId())).thenReturn(Optional.of(admin));
+        when(admins.save(any(PlatformAdmin.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var rotacion = service.rotateTotp(admin.getId().toString(), "operador@kubo.local", "127.0.0.1");
+
+        assertThat(rotacion.otpauthUri()).startsWith("otpauth://totp/");
+        assertThat(rotacion.secret()).isNotEqualTo(SECRETO);
+        assertThat(cipher.decrypt(admin.getTotpSecret())).isEqualTo(rotacion.secret());
+        verify(platformAudit).save(any(PlatformAudit.class));
+
+        // El codigo del secreto viejo ya no sirve: el segundo factor quedo rotado.
+        when(tokenService.verifyPlatformChallenge("desafio")).thenReturn(admin.getId().toString());
+        String viejo = totp.codeAt(SECRETO, Instant.now());
+        assertThatThrownBy(() -> service.verifyTotp(new PlatformVerifyRequest("desafio", viejo), "127.0.0.1"))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("INVALID_TOTP");
     }
 
     @Test

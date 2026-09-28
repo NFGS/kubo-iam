@@ -7,10 +7,12 @@ import co.kubo.iam.application.dto.PlatformDtos.PlatformLoginRequest;
 import co.kubo.iam.application.dto.PlatformDtos.PlatformTenant;
 import co.kubo.iam.application.dto.PlatformDtos.PlatformTenantUpdate;
 import co.kubo.iam.application.dto.PlatformDtos.PlatformToken;
+import co.kubo.iam.application.dto.PlatformDtos.PlatformTotpRotation;
 import co.kubo.iam.application.dto.PlatformDtos.PlatformVerifyRequest;
 import co.kubo.iam.config.TotpSecretCipher;
 import co.kubo.iam.domain.Plan;
 import co.kubo.iam.domain.PlatformAdmin;
+import co.kubo.iam.domain.PlatformAudit;
 import co.kubo.iam.domain.Tenant;
 import co.kubo.iam.domain.UserStatus;
 import co.kubo.iam.domain.repository.PlatformAdminRepository;
@@ -119,6 +121,41 @@ public class PlatformService {
                 "Bearer",
                 Instant.now().getEpochSecond() + 900,
                 admin.getEmail());
+    }
+
+    /**
+     * Rota el segundo factor del operador (F6.6): el secreto viejo deja de
+     * servir en el acto y la URI nueva se entrega **una sola vez**. Exige una
+     * sesion de plataforma valida (el token), es decir, haber pasado el codigo.
+     */
+    @Transactional
+    public PlatformTotpRotation rotateTotp(String adminId, String actorEmail, String ip) {
+        UUID id;
+        try {
+            id = UUID.fromString(adminId);
+        } catch (IllegalArgumentException exception) {
+            throw DomainException.badRequest("INVALID_ID", "El identificador no es valido");
+        }
+
+        PlatformAdmin admin = admins.findById(id)
+                .orElseThrow(() -> DomainException.notFound("ADMIN_NOT_FOUND", "El operador no existe"));
+
+        String secreto = totpService.newSecret();
+        admin.setTotpSecret(totpCipher.encrypt(secreto));
+        admins.save(admin);
+
+        platformAudit.save(new PlatformAudit(
+                UUID.randomUUID(),
+                admin.getId(),
+                actorEmail == null || actorEmail.isBlank() ? admin.getEmail() : actorEmail,
+                "TOTP_ROTATED",
+                null,
+                "segundo factor rotado",
+                ip,
+                Instant.now()));
+
+        // Unica vez que el secreto nuevo sale en claro.
+        return new PlatformTotpRotation(totpService.otpauthUri(admin.getEmail(), secreto), secreto);
     }
 
     /** Negocios con su plan, estado y cupo de usuarios (datos de identidad). */

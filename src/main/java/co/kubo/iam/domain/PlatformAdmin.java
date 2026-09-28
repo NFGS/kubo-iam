@@ -73,6 +73,11 @@ public class PlatformAdmin {
         return status;
     }
 
+    /** Rotacion del segundo factor: reemplaza el secreto cifrado (F6.6). */
+    public void setTotpSecret(String totpSecret) {
+        this.totpSecret = totpSecret;
+    }
+
     public void setStatus(String status) {
         this.status = status;
     }

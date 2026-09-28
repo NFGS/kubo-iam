@@ -36,6 +36,10 @@ public final class PlatformDtos {
             int maxWarehouses) {
     }
 
+    /** Rotacion del segundo factor: la URI se entrega UNA vez (F6.6). */
+    public record PlatformTotpRotation(String otpauthUri, String secret) {
+    }
+
     /** Suspender, reactivar o registrar un pago (renovacion en dias). */
     public record PlatformTenantUpdate(@Size(max = 20) String status, Integer renewDays) {
     }
