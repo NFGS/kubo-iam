@@ -522,7 +522,9 @@ public class AuthService {
                 tenant.getVertical(),
                 tenant.getStatus(),
                 plan.maxUsers(),
-                plan.maxWarehouses());
+                plan.maxWarehouses(),
+                users.countByTenantIdAndStatus(tenant.getId(), UserStatus.ACTIVE),
+                tenant.getPlanRenewsAt() == null ? null : tenant.getPlanRenewsAt().toString());
     }
 
     /** Catalogo de planes para la interfaz (ADR-0021). */

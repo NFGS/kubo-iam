@@ -36,6 +36,10 @@ public class Tenant {
     @Column(nullable = false, length = 20)
     private String status = "ACTIVE";
 
+    /** Fecha hasta la que esta pagado el plan (F6.2); null si es manual. */
+    @Column(name = "plan_renews_at")
+    private java.time.LocalDate planRenewsAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -98,6 +102,14 @@ public class Tenant {
 
     public boolean isSuspended() {
         return "SUSPENDED".equals(status);
+    }
+
+    public java.time.LocalDate getPlanRenewsAt() {
+        return planRenewsAt;
+    }
+
+    public void setPlanRenewsAt(java.time.LocalDate planRenewsAt) {
+        this.planRenewsAt = planRenewsAt;
     }
 
     public String getVertical() {
