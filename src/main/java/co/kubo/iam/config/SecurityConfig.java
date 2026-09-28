@@ -30,6 +30,12 @@ public class SecurityConfig {
                                 "/actuator/health",
                                 "/actuator/info")
                         .permitAll()
+                        // Reino de plataforma (F6.4, ADR-0025): su acceso se
+                        // completa antes de tener sesion; el resto exige el rol.
+                        .requestMatchers("/platform/auth/**")
+                        .permitAll()
+                        .requestMatchers("/platform/**")
+                        .hasRole("PLATFORM")
                         .anyRequest()
                         .authenticated())
                 .addFilterBefore(new InternalAuthFilter(), UsernamePasswordAuthenticationFilter.class)

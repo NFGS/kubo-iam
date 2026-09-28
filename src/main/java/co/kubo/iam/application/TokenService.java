@@ -77,6 +77,72 @@ public class TokenService {
         }
     }
 
+    /** Firma RS256 con el `kid` vigente: un solo lugar para el armado del JWT. */
+    private String firmar(JWTClaimsSet claims) {
+        try {
+            SignedJWT jwt = new SignedJWT(
+                    new JWSHeader.Builder(JWSAlgorithm.RS256)
+                            .keyID(rsaKey.getKeyID())
+                            .type(JOSEObjectType.JWT)
+                            .build(),
+                    claims);
+            jwt.sign(signer);
+            return jwt.serialize();
+        } catch (Exception exception) {
+            throw new IllegalStateException("No fue posible firmar el token", exception);
+        }
+    }
+
+    /**
+     * Desafio del segundo factor de PLATAFORMA (F6.4, ADR-0025): mismo mecanismo
+     * que el del negocio, pero con `platform=true`; el gateway exige ese claim
+     * para `/platform/*` y lo rechaza en el resto.
+     */
+    public String signPlatformChallenge(co.kubo.iam.domain.PlatformAdmin admin) {
+        Instant now = Instant.now();
+
+        return firmar(new JWTClaimsSet.Builder()
+                .subject(admin.getId().toString())
+                .issuer(properties.jwt().issuer())
+                .audience(properties.jwt().audience())
+                .issueTime(Date.from(now))
+                .expirationTime(Date.from(now.plus(Duration.ofMinutes(5))))
+                .jwtID(UUID.randomUUID().toString())
+                .claim("typ", "totp")
+                .claim("platform", true)
+                .build());
+    }
+
+    /** Devuelve el id del operador del desafio de plataforma, o lanza. */
+    public String verifyPlatformChallenge(String token) {
+        JWTClaimsSet claims = claimsDe(token, "totp");
+
+        if (!Boolean.TRUE.equals(claims.getClaim("platform"))) {
+            throw DomainException.unauthorized(
+                    "INVALID_CHALLENGE", "El desafio de verificacion no es valido o expiro");
+        }
+
+        return claims.getSubject();
+    }
+
+    /** Token de acceso de plataforma: `typ=access` + `platform=true`. */
+    public String signPlatformAccessToken(co.kubo.iam.domain.PlatformAdmin admin) {
+        Instant now = Instant.now();
+
+        return firmar(new JWTClaimsSet.Builder()
+                .subject(admin.getId().toString())
+                .issuer(properties.jwt().issuer())
+                .audience(properties.jwt().audience())
+                .issueTime(Date.from(now))
+                .expirationTime(Date.from(now.plus(Duration.ofMinutes(properties.jwt().accessTokenMinutes()))))
+                .jwtID(UUID.randomUUID().toString())
+                .claim("typ", "access")
+                .claim("platform", true)
+                .claim("email", admin.getEmail())
+                .claim("name", "Operador de plataforma")
+                .build());
+    }
+
     public String signAccessToken(User user) {
         try {
             Instant now = Instant.now();
@@ -150,18 +216,24 @@ public class TokenService {
 
     /** Devuelve el id del usuario del desafio, o lanza si no es valido. */
     public String verifyTotpChallenge(String token) {
+        return claimsDe(token, "totp").getSubject();
+    }
+
+    /** Verifica firma, emisor, vigencia y tipo; devuelve los claims. */
+    private JWTClaimsSet claimsDe(String token, String tipo) {
         try {
             SignedJWT jwt = SignedJWT.parse(token);
             JWSVerifier verifier = new RSASSAVerifier(rsaKey.toRSAPublicKey());
+            JWTClaimsSet claims = jwt.getJWTClaimsSet();
 
             if (!jwt.verify(verifier)
-                    || !"totp".equals(jwt.getJWTClaimsSet().getStringClaim("typ"))
-                    || !properties.jwt().issuer().equals(jwt.getJWTClaimsSet().getIssuer())
-                    || jwt.getJWTClaimsSet().getExpirationTime().before(new Date())) {
-                throw new IllegalArgumentException("desafio invalido");
+                    || !tipo.equals(claims.getStringClaim("typ"))
+                    || !properties.jwt().issuer().equals(claims.getIssuer())
+                    || claims.getExpirationTime().before(new Date())) {
+                throw new IllegalArgumentException("token invalido");
             }
 
-            return jwt.getJWTClaimsSet().getSubject();
+            return claims;
         } catch (Exception exception) {
             throw DomainException.unauthorized(
                     "INVALID_CHALLENGE", "El desafio de verificacion no es valido o expiro");

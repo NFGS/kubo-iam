@@ -25,10 +25,27 @@ public class InternalAuthFilter extends OncePerRequestFilter {
     public static final String HEADER_TENANT_ID = "X-Tenant-Id";
     public static final String HEADER_USER_ROLE = "X-User-Role";
 
+    /** Identidad del operador de plataforma (F6.4, ADR-0025): reino propio. */
+    public static final String HEADER_PLATFORM_ID = "X-Platform-Admin-Id";
+    public static final String HEADER_PLATFORM_EMAIL = "X-Platform-Admin-Email";
+
     @Override
     protected void doFilterInternal(
             HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
+
+        // El operador de plataforma no es un usuario de negocio: se autentica con
+        // su propia cabecera y su propio rol. El gateway garantiza que un token
+        // de negocio no llegue aqui y viceversa.
+        String platformId = request.getHeader(HEADER_PLATFORM_ID);
+        if (platformId != null
+                && !platformId.isBlank()
+                && SecurityContextHolder.getContext().getAuthentication() == null) {
+            var authentication = new UsernamePasswordAuthenticationToken(
+                    platformId, null, List.of(new SimpleGrantedAuthority("ROLE_PLATFORM")));
+            authentication.setDetails(request.getHeader(HEADER_PLATFORM_EMAIL));
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+        }
 
         String userId = request.getHeader(HEADER_USER_ID);
         if (userId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
