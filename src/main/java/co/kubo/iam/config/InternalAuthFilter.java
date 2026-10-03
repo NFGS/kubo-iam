@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import java.util.Set;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -29,6 +30,10 @@ public class InternalAuthFilter extends OncePerRequestFilter {
     public static final String HEADER_PLATFORM_ID = "X-Platform-Admin-Id";
     public static final String HEADER_PLATFORM_EMAIL = "X-Platform-Admin-Email";
 
+    /** Roles validos del negocio: una cabecera forjada no inventa un rol nuevo. */
+    private static final Set<String> ROLES =
+            Set.of("OWNER", "ADMIN", "SELLER", "ACCOUNTANT", "VIEWER");
+
     @Override
     protected void doFilterInternal(
             HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -48,10 +53,20 @@ public class InternalAuthFilter extends OncePerRequestFilter {
         }
 
         String userId = request.getHeader(HEADER_USER_ID);
-        if (userId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+        if (userId != null && !userId.isBlank() && SecurityContextHolder.getContext().getAuthentication() == null) {
             String role = request.getHeader(HEADER_USER_ROLE);
+
+            // Whitelist: el gateway solo inyecta roles verificados, pero una
+            // cabecera forjada no puede inventar un rol nuevo.
+            if (role == null || !ROLES.contains(role)) {
+                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                response.setContentType("application/json");
+                response.getWriter().write("{\"code\":\"INVALID_ROLE\",\"message\":\"El rol no es valido\"}");
+                return;
+            }
+
             List<SimpleGrantedAuthority> authorities =
-                    List.of(new SimpleGrantedAuthority("ROLE_" + (role == null ? "USER" : role)));
+                    List.of(new SimpleGrantedAuthority("ROLE_" + role));
             var authentication = new UsernamePasswordAuthenticationToken(userId, null, authorities);
             authentication.setDetails(request.getHeader(HEADER_TENANT_ID));
             SecurityContextHolder.getContext().setAuthentication(authentication);

@@ -58,6 +58,13 @@ public class DataSeeder implements ApplicationRunner {
             return;
         }
 
+        // Sin contrasena explicita no se siembra: crear cuentas conocidas con
+        // clave vacia es peor que no tener semilla.
+        if (properties.seed().adminPassword() == null || properties.seed().adminPassword().isBlank()) {
+            log.warn("Semilla habilitada sin KUBO_ADMIN_PASSWORD: se omite");
+            return;
+        }
+
         // La semilla es una operacion de sistema: crea el negocio y sus usuarios
         // antes de que exista una peticion con identidad. Con RLS activo, sin
         // esta marca no veria ni insertaria ninguna fila.

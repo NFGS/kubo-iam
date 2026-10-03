@@ -3,9 +3,10 @@ server:
   servlet:
     context-path: /api/v1
   # Malla interna (P-28, ADR-0020): HTTPS exigiendo el certificado del cliente.
-  # Se enciende con KUBO_INTERNAL_TLS=true; sin la bandera el servicio sirve HTTP.
+  # Fail-closed: por defecto exige la malla; en desarrollo local se apaga de
+  # forma explicita con KUBO_INTERNAL_TLS=false.
   ssl:
-    enabled: ${KUBO_INTERNAL_TLS:false}
+    enabled: ${KUBO_INTERNAL_TLS:true}
     certificate: file:${KUBO_TLS_CERT:/certs/iam.crt}
     certificate-private-key: file:${KUBO_TLS_KEY:/certs/iam.key}
     trust-certificate: file:${KUBO_TLS_CA:/certs/ca.crt}
@@ -45,7 +46,7 @@ kubo:
   seed:
     enabled: ${KUBO_SEED_ENABLED:false}
     admin-email: ${KUBO_ADMIN_EMAIL:admin@kubo.local}
-    admin-password: ${KUBO_ADMIN_PASSWORD:Admin123!}
+    admin-password: ${KUBO_ADMIN_PASSWORD:}
     tenant-name: ${KUBO_TENANT_NAME:Tienda La Esquina}
   payments:
     # Secreto compartido con el proveedor para firmar sus webhooks (HMAC-SHA256).
