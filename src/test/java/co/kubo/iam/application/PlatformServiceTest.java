@@ -3,8 +3,10 @@ package co.kubo.iam.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -66,6 +68,9 @@ class PlatformServiceTest {
     @Mock
     private JdbcTemplate jdbc;
 
+    @Mock
+    private PlatformIncidentService incidents;
+
     private final TotpService totp = new TotpService();
     private TotpSecretCipher cipher;
     private PlatformService service;
@@ -77,7 +82,13 @@ class PlatformServiceTest {
         cipher = new TotpSecretCipher(properties());
 
         service = new PlatformService(
-                admins, platformAudit, tenants, users, encoder, tokenService, totp, cipher, jdbc);
+                admins, platformAudit, tenants, users, encoder, tokenService, totp, cipher, jdbc,
+                properties(), incidents);
+
+        // Por defecto el intento fallido no bloquea: cada prueba decide cuando
+        // se alcanza el limite.
+        lenient().when(incidents.registerFailure(any(), anyString(), anyString(), anyInt(), anyInt()))
+                .thenReturn(new PlatformIncidentService.Failure(1, false, null));
 
         admin = new PlatformAdmin(
                 UUID.randomUUID(), "operador@kubo.local", "hash", cipher.encrypt(SECRETO), Instant.now());
@@ -110,12 +121,15 @@ class PlatformServiceTest {
                 .extracting(exception -> ((DomainException) exception).getCode())
                 .isEqualTo("INVALID_CREDENTIALS");
 
-        verify(platformAudit).save(any(PlatformAudit.class));
+        verify(incidents).registerFailure(eq(admin.getId()), eq("LOGIN_FAILED"), anyString(), eq(5), eq(15));
     }
 
     @Test
     @DisplayName("El codigo vigente emite el token de plataforma")
     void codigoVigenteEmiteToken() {
+        admin.setFailedLoginAttempts(3);
+        admin.setLockedUntil(Instant.now().minusSeconds(60));
+
         when(tokenService.verifyPlatformChallenge("desafio")).thenReturn(admin.getId().toString());
         when(admins.findById(admin.getId())).thenReturn(Optional.of(admin));
         when(admins.save(any(PlatformAdmin.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -126,6 +140,51 @@ class PlatformServiceTest {
 
         assertThat(token.accessToken()).isEqualTo("token-plataforma");
         assertThat(token.email()).isEqualTo("operador@kubo.local");
+        // El acceso correcto limpia el contador y el bloqueo vencido.
+        assertThat(admin.getFailedLoginAttempts()).isZero();
+        assertThat(admin.getLockedUntil()).isNull();
+    }
+
+    @Test
+    @DisplayName("El contador de intentos fallidos bloquea al operador (P-11)")
+    void intentosFallidosBloquean() {
+        when(admins.findByEmailIgnoreCase("operador@kubo.local")).thenReturn(Optional.of(admin));
+        when(encoder.matches(anyString(), anyString())).thenReturn(false);
+        when(incidents.registerFailure(eq(admin.getId()), eq("LOGIN_FAILED"), anyString(), eq(5), eq(15)))
+                .thenReturn(new PlatformIncidentService.Failure(5, true, Instant.now().plusSeconds(900)));
+
+        assertThatThrownBy(() -> service.login(new PlatformLoginRequest("operador@kubo.local", "mala"), "127.0.0.1"))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("ACCOUNT_LOCKED");
+    }
+
+    @Test
+    @DisplayName("Una cuenta bloqueada no abre el desafio ni con la contrasena correcta")
+    void cuentaBloqueadaNoEntra() {
+        admin.setLockedUntil(Instant.now().plusSeconds(600));
+        when(admins.findByEmailIgnoreCase("operador@kubo.local")).thenReturn(Optional.of(admin));
+
+        assertThatThrownBy(() -> service.login(new PlatformLoginRequest("operador@kubo.local", "Clave123!"), "127.0.0.1"))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("ACCOUNT_LOCKED");
+
+        verify(platformAudit).save(any(PlatformAudit.class));
+    }
+
+    @Test
+    @DisplayName("Un codigo TOTP invalido alimenta el contador del operador (P-11)")
+    void totpFallidoAlimentaContador() {
+        when(tokenService.verifyPlatformChallenge("desafio")).thenReturn(admin.getId().toString());
+        when(admins.findById(admin.getId())).thenReturn(Optional.of(admin));
+
+        assertThatThrownBy(() -> service.verifyTotp(new PlatformVerifyRequest("desafio", "000000"), "127.0.0.1"))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("INVALID_TOTP");
+
+        verify(incidents).registerFailure(eq(admin.getId()), eq("TOTP_FAILED"), anyString(), eq(5), eq(15));
     }
 
     @Test
@@ -168,7 +227,10 @@ class PlatformServiceTest {
     @Test
     @DisplayName("La renovacion extiende desde la fecha vigente y valida los dias")
     void renovacion() {
-        tenant.setPlanRenewsAt(java.time.LocalDate.now().plusDays(10));
+        // La fecha del negocio, no la UTC: la prueba seria fragil despues de las
+        // 19:00 de Bogota si comparara contra el reloj del contenedor.
+        java.time.ZoneId zona = java.time.ZoneId.of("America/Bogota");
+        tenant.setPlanRenewsAt(java.time.LocalDate.now(zona).plusDays(10));
         when(tenants.findById(tenant.getId())).thenReturn(Optional.of(tenant));
         when(tenants.save(any(Tenant.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -177,7 +239,7 @@ class PlatformServiceTest {
                 new PlatformTenantUpdate(null, 30), "127.0.0.1");
 
         // 10 dias vigentes + 30 = 40: pagar antes de vencer no regala dias.
-        assertThat(vista.planRenewsAt()).isEqualTo(java.time.LocalDate.now().plusDays(40).toString());
+        assertThat(vista.planRenewsAt()).isEqualTo(java.time.LocalDate.now(zona).plusDays(40).toString());
 
         assertThatThrownBy(() -> service.updateTenant(
                 admin.getId().toString(), admin.getEmail(), tenant.getId().toString(),

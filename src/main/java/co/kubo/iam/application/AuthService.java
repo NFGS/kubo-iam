@@ -244,10 +244,26 @@ public class AuthService {
                 .orElseThrow(() -> DomainException.unauthorized(
                         "INVALID_CHALLENGE", "El desafio de verificacion no es valido"));
 
+        if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now())) {
+            auditService.recordIndependent(
+                    user.getTenant().getId(), user.getId(), "LOGIN_BLOCKED", "user", user.getId().toString(), ip, userAgent);
+            throw DomainException.unauthorized(
+                    "ACCOUNT_LOCKED", "La cuenta esta bloqueada temporalmente por intentos fallidos");
+        }
+
         if (!user.isTotpEnabled()
                 || !totpService.verify(totpCipher.decrypt(user.getTotpSecret()), request.code(), Instant.now())) {
-            auditService.record(
-                    user.getTenant().getId(), user.getId(), "TOTP_FAILED", "user", user.getId().toString(), ip, userAgent);
+            // El codigo de seis digitos no puede ser la puerta sin freno de la
+            // fuerza bruta: comparte el contador y el bloqueo de la contrasena
+            // (P-11), en una transaccion que sobrevive al rechazo.
+            SecurityIncidentService.LoginFailure failure = securityIncidents.registerLoginFailure(
+                    user.getId(), ip, userAgent,
+                    properties.auth().maxFailedAttempts(), properties.auth().lockMinutes());
+
+            if (failure.locked()) {
+                throw DomainException.unauthorized(
+                        "ACCOUNT_LOCKED", "La cuenta quedo bloqueada temporalmente por intentos fallidos");
+            }
             throw DomainException.unauthorized("INVALID_TOTP", "El codigo de verificacion no es valido");
         }
 
@@ -283,6 +299,20 @@ public class AuthService {
         User user = users.findById(stored.getUserId())
                 .orElseThrow(() -> DomainException.unauthorized(
                         "INVALID_REFRESH_TOKEN", "El token de refresco no es valido"));
+
+        // Renovar no es un camino lateral: la sesion no sobrevive a la
+        // deshabilitacion del usuario ni a la suspension del negocio (ADR-0021).
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw DomainException.unauthorized("USER_DISABLED", "El usuario esta deshabilitado");
+        }
+
+        if (user.getTenant().isSuspended()) {
+            auditService.recordIndependent(
+                    user.getTenant().getId(), user.getId(), "TENANT_SUSPENDED", "tenant",
+                    user.getTenant().getId().toString(), ip, userAgent);
+            throw DomainException.forbidden(
+                    "TENANT_SUSPENDED", "El negocio esta suspendido; contacte al operador");
+        }
 
         String accessToken = tokenService.signAccessToken(user);
         String rawRefresh = tokenService.newRefreshToken();

@@ -3,8 +3,10 @@ package co.kubo.iam.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -23,7 +25,6 @@ import co.kubo.iam.application.dto.AuthDtos.UpdateTenantRequest;
 import co.kubo.iam.application.dto.AuthDtos.UpdateUserRequest;
 import co.kubo.iam.application.dto.AuthDtos.UserResponse;
 import co.kubo.iam.config.KuboProperties;
-import co.kubo.iam.config.TotpSecretCipher;
 import co.kubo.iam.config.TotpSecretCipher;
 import co.kubo.iam.domain.RefreshToken;
 import co.kubo.iam.domain.Tenant;
@@ -93,6 +94,11 @@ class AuthServiceFlowsTest {
         user = new User(
                 UUID.randomUUID(), tenant, "dueno@test.local", "hash", "Dueno Test",
                 UserRole.OWNER, UserStatus.ACTIVE, Instant.now());
+
+        // Un intento fallido no bloquea por defecto: cada prueba decide cuando
+        // se alcanza el limite.
+        lenient().when(incidents.registerLoginFailure(any(), anyString(), anyString(), anyInt(), anyInt()))
+                .thenReturn(new SecurityIncidentService.LoginFailure(1, false, null));
     }
 
     @Test
@@ -192,6 +198,41 @@ class AuthServiceFlowsTest {
         assertThat(stored.getRevokedAt()).isNotNull();
         verify(refreshTokens).save(stored);
         verify(audit).record(any(), any(), eq("TOKEN_REFRESHED"), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("El refresco no revive la sesion de un negocio suspendido")
+    void refreshNegocioSuspendido() {
+        user.getTenant().setStatus("SUSPENDED");
+        RefreshToken stored = new RefreshToken(
+                UUID.randomUUID(), user.getId(), "hash", Instant.now().plusSeconds(600), Instant.now());
+        when(tokenService.hashToken("vigente")).thenReturn("hash");
+        when(refreshTokens.findByTokenHash("hash")).thenReturn(Optional.of(stored));
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> service.refresh(new RefreshRequest("vigente"), "127.0.0.1", "junit"))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("TENANT_SUSPENDED");
+
+        // El token no se rota: la sesion simplemente no se renueva.
+        assertThat(stored.getRevokedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("El refresco no revive la sesion de un usuario deshabilitado")
+    void refreshUsuarioDeshabilitado() {
+        user.setStatus(UserStatus.DISABLED);
+        RefreshToken stored = new RefreshToken(
+                UUID.randomUUID(), user.getId(), "hash", Instant.now().plusSeconds(600), Instant.now());
+        when(tokenService.hashToken("vigente")).thenReturn("hash");
+        when(refreshTokens.findByTokenHash("hash")).thenReturn(Optional.of(stored));
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> service.refresh(new RefreshRequest("vigente"), "127.0.0.1", "junit"))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("USER_DISABLED");
     }
 
     @Test
@@ -335,6 +376,40 @@ class AuthServiceFlowsTest {
                 .isInstanceOf(DomainException.class)
                 .extracting(exception -> ((DomainException) exception).getCode())
                 .isEqualTo("INVALID_TOTP");
+    }
+
+    @Test
+    @DisplayName("El codigo TOTP fallido alimenta el bloqueo por intentos (P-11)")
+    void totpFallidoAlimentaContador() {
+        String secreto = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+        user.setTotpSecret(new TotpSecretCipher(properties).encrypt(secreto));
+        user.setTotpEnabled(true);
+
+        when(tokenService.verifyTotpChallenge("desafio")).thenReturn(user.getId().toString());
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> service.verifyTotp(new TotpVerifyRequest("desafio", "000000"), "127.0.0.1", "junit"))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("INVALID_TOTP");
+
+        verify(incidents).registerLoginFailure(eq(user.getId()), anyString(), anyString(), eq(5), eq(15));
+    }
+
+    @Test
+    @DisplayName("Una cuenta bloqueada no valida el codigo TOTP")
+    void totpBloqueadoNoValida() {
+        user.setLockedUntil(Instant.now().plusSeconds(600));
+
+        when(tokenService.verifyTotpChallenge("desafio")).thenReturn(user.getId().toString());
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> service.verifyTotp(new TotpVerifyRequest("desafio", "000000"), "127.0.0.1", "junit"))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("ACCOUNT_LOCKED");
+
+        verify(incidents, never()).registerLoginFailure(any(), anyString(), anyString(), anyInt(), anyInt());
     }
 
     @Test

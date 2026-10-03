@@ -9,6 +9,7 @@ import co.kubo.iam.application.dto.PlatformDtos.PlatformTenantUpdate;
 import co.kubo.iam.application.dto.PlatformDtos.PlatformToken;
 import co.kubo.iam.application.dto.PlatformDtos.PlatformTotpRotation;
 import co.kubo.iam.application.dto.PlatformDtos.PlatformVerifyRequest;
+import co.kubo.iam.config.KuboProperties;
 import co.kubo.iam.config.TotpSecretCipher;
 import co.kubo.iam.domain.Plan;
 import co.kubo.iam.domain.PlatformAdmin;
@@ -21,6 +22,7 @@ import co.kubo.iam.domain.repository.TenantRepository;
 import co.kubo.iam.domain.repository.UserRepository;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -53,6 +55,8 @@ public class PlatformService {
     private final TotpService totpService;
     private final TotpSecretCipher totpCipher;
     private final JdbcTemplate jdbc;
+    private final KuboProperties properties;
+    private final PlatformIncidentService incidents;
 
     public PlatformService(
             PlatformAdminRepository admins,
@@ -63,7 +67,9 @@ public class PlatformService {
             TokenService tokenService,
             TotpService totpService,
             TotpSecretCipher totpCipher,
-            JdbcTemplate jdbc) {
+            JdbcTemplate jdbc,
+            KuboProperties properties,
+            PlatformIncidentService incidents) {
         this.admins = admins;
         this.platformAudit = platformAudit;
         this.tenants = tenants;
@@ -73,6 +79,8 @@ public class PlatformService {
         this.totpService = totpService;
         this.totpCipher = totpCipher;
         this.jdbc = jdbc;
+        this.properties = properties;
+        this.incidents = incidents;
     }
 
     /**
@@ -89,8 +97,21 @@ public class PlatformService {
             throw DomainException.unauthorized("ADMIN_DISABLED", "El operador esta deshabilitado");
         }
 
+        if (admin.getLockedUntil() != null && admin.getLockedUntil().isAfter(Instant.now())) {
+            record(admin, "LOGIN_BLOCKED", null, "cuenta bloqueada", ip);
+            throw DomainException.unauthorized(
+                    "ACCOUNT_LOCKED", "La cuenta esta bloqueada temporalmente por intentos fallidos");
+        }
+
         if (!passwordEncoder.matches(request.password(), admin.getPasswordHash())) {
-            record(admin, "LOGIN_FAILED", null, "contrasena incorrecta", ip);
+            PlatformIncidentService.Failure failure = incidents.registerFailure(
+                    admin.getId(), "LOGIN_FAILED", ip,
+                    properties.auth().maxFailedAttempts(), properties.auth().lockMinutes());
+
+            if (failure.locked()) {
+                throw DomainException.unauthorized(
+                        "ACCOUNT_LOCKED", "La cuenta quedo bloqueada temporalmente por intentos fallidos");
+            }
             throw DomainException.unauthorized("INVALID_CREDENTIALS", "Correo o contrasena incorrectos");
         }
 
@@ -107,11 +128,26 @@ public class PlatformService {
                 .orElseThrow(() -> DomainException.unauthorized(
                         "INVALID_CHALLENGE", "El desafio de verificacion no es valido"));
 
+        if (admin.getLockedUntil() != null && admin.getLockedUntil().isAfter(Instant.now())) {
+            record(admin, "LOGIN_BLOCKED", null, "cuenta bloqueada", ip);
+            throw DomainException.unauthorized(
+                    "ACCOUNT_LOCKED", "La cuenta esta bloqueada temporalmente por intentos fallidos");
+        }
+
         if (!totpService.verify(totpCipher.decrypt(admin.getTotpSecret()), request.code(), Instant.now())) {
-            record(admin, "TOTP_FAILED", null, null, ip);
+            PlatformIncidentService.Failure failure = incidents.registerFailure(
+                    admin.getId(), "TOTP_FAILED", ip,
+                    properties.auth().maxFailedAttempts(), properties.auth().lockMinutes());
+
+            if (failure.locked()) {
+                throw DomainException.unauthorized(
+                        "ACCOUNT_LOCKED", "La cuenta quedo bloqueada temporalmente por intentos fallidos");
+            }
             throw DomainException.unauthorized("INVALID_TOTP", "El codigo de verificacion no es valido");
         }
 
+        admin.setFailedLoginAttempts(0);
+        admin.setLockedUntil(null);
         admin.setLastLoginAt(Instant.now());
         admins.save(admin);
         record(admin, "LOGIN_SUCCEEDED", null, null, ip);
@@ -210,8 +246,11 @@ public class PlatformService {
 
             // Igual que la herramienta del operador: se extiende desde la fecha
             // vigente o desde hoy, la que sea mayor; pagar antes no regala dias.
-            LocalDate base = tenant.getPlanRenewsAt() == null || tenant.getPlanRenewsAt().isBefore(LocalDate.now())
-                    ? LocalDate.now()
+            // "Hoy" es el dia del negocio (su zona horaria), no el del contenedor:
+            // a las 19:00 de Bogota en UTC ya es manana (ADR-0012).
+            LocalDate hoy = LocalDate.now(ZoneId.of(tenant.getTimezone()));
+            LocalDate base = tenant.getPlanRenewsAt() == null || tenant.getPlanRenewsAt().isBefore(hoy)
+                    ? hoy
                     : tenant.getPlanRenewsAt();
 
             tenant.setPlanRenewsAt(base.plusDays(request.renewDays()));

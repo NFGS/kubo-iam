@@ -11,6 +11,7 @@ import co.kubo.iam.application.dto.PlatformDtos.PlatformLoginRequest;
 import co.kubo.iam.application.dto.PlatformDtos.PlatformTenant;
 import co.kubo.iam.application.dto.PlatformDtos.PlatformTenantUpdate;
 import co.kubo.iam.application.dto.PlatformDtos.PlatformToken;
+import co.kubo.iam.application.dto.PlatformDtos.PlatformTotpRotation;
 import co.kubo.iam.application.dto.PlatformDtos.PlatformVerifyRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -119,6 +120,22 @@ public class PlatformController {
     @PostMapping("/auth/totp")
     public PlatformToken totp(@Valid @RequestBody PlatformVerifyRequest request, HttpServletRequest http) {
         return platformService.verifyTotp(request, clientIp(http));
+    }
+
+    /**
+     * Rota el segundo factor del operador (F6.6): el secreto viejo deja de
+     * servir en el acto y la URI nueva se entrega una sola vez. Exige una
+     * sesion de plataforma valida, es decir, haber pasado el codigo.
+     */
+    @PostMapping("/totp/rotate")
+    public PlatformTotpRotation rotateTotp(
+            @RequestHeader(value = HEADER_PLATFORM_ID, required = false) String actorId,
+            @RequestHeader(value = HEADER_PLATFORM_EMAIL, required = false) String actorEmail,
+            HttpServletRequest http) {
+        requirePlatform(actorId);
+
+        return platformService.rotateTotp(
+                actorId, actorEmail == null ? "operador" : actorEmail, clientIp(http));
     }
 
     @GetMapping("/tenants")
