@@ -168,6 +168,15 @@ public class TokenService {
                     .claim("tenant_vertical", user.getTenant().getVertical())
                     // Plan comercial (ADR-0021): cada servicio aplica sus cupos.
                     .claim("tenant_plan", user.getTenant().getPlan())
+                    // Datos fiscales (DIAN): el proveedor tecnologico los
+                    // necesita para emitir la factura; viajan como el resto de
+                    // la configuracion del negocio.
+                    .claim("tenant_tax_id", texto(user.getTenant().getTaxId()))
+                    .claim("tenant_tax_id_dv", texto(user.getTenant().getTaxIdDv()))
+                    .claim("tenant_fiscal_address", texto(user.getTenant().getFiscalAddress()))
+                    .claim("tenant_tax_regime", texto(user.getTenant().getTaxRegime()))
+                    .claim("tenant_invoice_resolution", texto(user.getTenant().getInvoiceResolution()))
+                    .claim("tenant_invoice_prefix", texto(user.getTenant().getInvoicePrefix()))
                     .build();
 
             SignedJWT jwt = new SignedJWT(
@@ -288,5 +297,10 @@ public class TokenService {
                 .privateKey(privateKey)
                 .keyID(key.computeThumbprint().toString())
                 .build();
+    }
+
+    /** Un claim de texto nunca viaja como nulo: vacio si el dato no existe. */
+    private static String texto(String valor) {
+        return valor == null ? "" : valor;
     }
 }

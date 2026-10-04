@@ -1,5 +1,6 @@
 package co.kubo.iam.application.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -81,10 +82,15 @@ public final class AuthDtos {
     public record TotpVerifyRequest(@NotBlank String challengeToken, @NotBlank String code) {
     }
 
-    /** Cambio de perfil del negocio: zona horaria y/o vertical (ADR-0012, ADR-0013). */
+    /** Cambio de perfil del negocio: zona horaria, vertical y datos fiscales (DIAN). */
     public record UpdateTenantRequest(
             @Size(max = 60) String timezone,
-            @Size(max = 40) String vertical) {
+            @Size(max = 40) String vertical,
+            @JsonProperty("tax_id") @Size(max = 20) String taxId,
+            @JsonProperty("fiscal_address") @Size(max = 200) String fiscalAddress,
+            @JsonProperty("tax_regime") @Size(max = 30) String taxRegime,
+            @JsonProperty("invoice_resolution") @Size(max = 60) String invoiceResolution,
+            @JsonProperty("invoice_prefix") @Size(max = 6) String invoicePrefix) {
     }
 
     public record TenantResponse(
@@ -98,7 +104,13 @@ public final class AuthDtos {
             int maxUsers,
             int maxWarehouses,
             long activeUsers,
-            String planRenewsAt) {
+            String planRenewsAt,
+            String taxId,
+            String taxIdDv,
+            String fiscalAddress,
+            String taxRegime,
+            String invoiceResolution,
+            String invoicePrefix) {
 
         /** Ficha de un plan para la interfaz (ADR-0021). */
         public record PlanInfo(String code, int maxUsers, int maxWarehouses) {

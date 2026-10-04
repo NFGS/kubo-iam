@@ -40,6 +40,27 @@ public class Tenant {
     @Column(name = "plan_renews_at")
     private java.time.LocalDate planRenewsAt;
 
+    /** Datos fiscales del emisor (facturacion electronica DIAN). */
+    @Column(name = "tax_id", length = 20)
+    private String taxId;
+
+    /** Digito de verificacion del NIT, calculado al registrar el NIT. */
+    @Column(name = "tax_id_dv", length = 1)
+    private String taxIdDv;
+
+    @Column(name = "fiscal_address", length = 200)
+    private String fiscalAddress;
+
+    /** RESPONSABLE_IVA, NO_RESPONSABLE_IVA o SIMPLE. */
+    @Column(name = "tax_regime", length = 30)
+    private String taxRegime;
+
+    @Column(name = "invoice_resolution", length = 60)
+    private String invoiceResolution;
+
+    @Column(name = "invoice_prefix", length = 6)
+    private String invoicePrefix;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -115,6 +136,54 @@ public class Tenant {
 
     public void setPlanRenewsAt(java.time.LocalDate planRenewsAt) {
         this.planRenewsAt = planRenewsAt;
+    }
+
+    public String getTaxId() {
+        return taxId;
+    }
+
+    public void setTaxId(String taxId) {
+        this.taxId = taxId;
+    }
+
+    public String getTaxIdDv() {
+        return taxIdDv;
+    }
+
+    public void setTaxIdDv(String taxIdDv) {
+        this.taxIdDv = taxIdDv;
+    }
+
+    public String getFiscalAddress() {
+        return fiscalAddress;
+    }
+
+    public void setFiscalAddress(String fiscalAddress) {
+        this.fiscalAddress = fiscalAddress;
+    }
+
+    public String getTaxRegime() {
+        return taxRegime;
+    }
+
+    public void setTaxRegime(String taxRegime) {
+        this.taxRegime = taxRegime;
+    }
+
+    public String getInvoiceResolution() {
+        return invoiceResolution;
+    }
+
+    public void setInvoiceResolution(String invoiceResolution) {
+        this.invoiceResolution = invoiceResolution;
+    }
+
+    public String getInvoicePrefix() {
+        return invoicePrefix;
+    }
+
+    public void setInvoicePrefix(String invoicePrefix) {
+        this.invoicePrefix = invoicePrefix;
     }
 
     public String getVertical() {

@@ -75,9 +75,20 @@ public class DataSeeder implements ApplicationRunner {
         }
 
         Instant now = Instant.now();
-        Tenant tenant = tenants.save(new Tenant(
+        Tenant tenant = new Tenant(
                 UUID.randomUUID(), properties.seed().tenantName(), "tienda-la-esquina", "community",
-                "America/Bogota", "retail", now));
+                "America/Bogota", "retail", now);
+
+        // Datos fiscales de demostracion (DIAN): la factura del sandbox sale
+        // con un NIT real y su digito de verificacion calculado.
+        tenant.setTaxId("900123456");
+        tenant.setTaxIdDv(co.kubo.iam.application.NitDv.calcular("900123456"));
+        tenant.setFiscalAddress("Calle 1 # 2-3, Armenia, Quindio");
+        tenant.setTaxRegime("RESPONSABLE_IVA");
+        tenant.setInvoiceResolution("Resolucion DIAN 18764 de 2026");
+        tenant.setInvoicePrefix("FE");
+
+        tenant = tenants.save(tenant);
 
         String adminEmail = properties.seed().adminEmail().toLowerCase(Locale.ROOT);
         User owner = users.save(new User(

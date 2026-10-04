@@ -24,6 +24,8 @@ Servicio de identidad, tenants, roles y auditoría de Kubo.
 - **Planes comerciales** (cupos y suspensión), **cobro** con intención de pago y
   webhook firmado, y **reino de plataforma** separado del negocio (ADR-0021,
   ADR-0025 y ADR-0026).
+- **Datos fiscales del negocio** (NIT con DV calculado, dirección, régimen,
+  resolución y prefijo) que viajan en el token para la facturación electrónica.
 - Bitácora de auditoría **append-only con cadena de hash versionada**.
 - **RLS activo**: cada petición fija `app.tenant_id` (o la marca de sistema) y el
   motor garantiza el aislamiento entre negocios.
@@ -43,7 +45,7 @@ Servicio de identidad, tenants, roles y auditoría de Kubo.
 | POST | `/api/v1/auth/totp/setup` · `/enable` · `/disable` | Ciclo del segundo factor del usuario | `X-User-Id` |
 | POST | `/api/v1/auth/totp/verify` | Cambia el desafío TOTP por la sesión | Público |
 | GET | `/api/v1/auth/.well-known/jwks.json` | Llave pública RSA (JWKS) | Público |
-| GET/PATCH | `/api/v1/tenants/me` | Perfil del negocio (vertical, zona horaria, plan) | `X-User-Id` |
+| GET/PATCH | `/api/v1/tenants/me` | Perfil del negocio (vertical, zona horaria, plan y datos fiscales) | `X-User-Id` |
 | GET | `/api/v1/tenants/plans` · `/tenants/me/prices` | Catálogo de planes y precios | `X-User-Id` |
 | POST | `/api/v1/tenants/me/payments` | Intención de pago del plan | `X-User-Id` |
 | POST | `/api/v1/webhooks/payments/{proveedor}` | Confirmación firmada (HMAC-SHA256) | Firma |

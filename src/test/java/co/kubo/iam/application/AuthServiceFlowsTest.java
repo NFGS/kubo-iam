@@ -277,22 +277,69 @@ class AuthServiceFlowsTest {
         when(tenants.save(any(Tenant.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         TenantResponse actualizado = service.updateTenant(
-                user.getId().toString(), new UpdateTenantRequest("America/Mexico_City", "restaurantes"));
+                user.getId().toString(), new UpdateTenantRequest("America/Mexico_City", "restaurantes", null, null, null, null, null));
 
         assertThat(actualizado.vertical()).isEqualTo("restaurantes");
         assertThat(actualizado.timezone()).isEqualTo("America/Mexico_City");
 
         assertThatThrownBy(() -> service.updateTenant(
-                user.getId().toString(), new UpdateTenantRequest(null, "inventado")))
+                user.getId().toString(), new UpdateTenantRequest(null, "inventado", null, null, null, null, null)))
                 .isInstanceOf(DomainException.class)
                 .extracting(exception -> ((DomainException) exception).getCode())
                 .isEqualTo("INVALID_VERTICAL");
 
         assertThatThrownBy(() -> service.updateTenant(
-                user.getId().toString(), new UpdateTenantRequest("Marte/Olympus", null)))
+                user.getId().toString(), new UpdateTenantRequest("Marte/Olympus", null, null, null, null, null, null)))
                 .isInstanceOf(DomainException.class)
                 .extracting(exception -> ((DomainException) exception).getCode())
                 .isEqualTo("INVALID_TIMEZONE");
+    }
+
+    @Test
+    @DisplayName("Los datos fiscales se guardan con el DV calculado (DIAN)")
+    void datosFiscales() {
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
+        when(tenants.save(any(Tenant.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TenantResponse actualizado = service.updateTenant(
+                user.getId().toString(),
+                new UpdateTenantRequest(
+                        null, null, "900123456", "Calle 1 # 2-3", "responsable_iva", "Resolucion 18764", "fe"));
+
+        assertThat(actualizado.taxId()).isEqualTo("900123456");
+        assertThat(actualizado.taxIdDv()).isEqualTo("8");
+        assertThat(actualizado.fiscalAddress()).isEqualTo("Calle 1 # 2-3");
+        assertThat(actualizado.taxRegime()).isEqualTo("RESPONSABLE_IVA");
+        assertThat(actualizado.invoiceResolution()).isEqualTo("Resolucion 18764");
+        assertThat(actualizado.invoicePrefix()).isEqualTo("FE");
+        verify(audit).record(any(), any(), eq("TENANT_UPDATED"), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Un NIT no numerico, un regimen o un prefijo invalidos se rechazan")
+    void datosFiscalesInvalidos() {
+        when(users.findById(user.getId())).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> service.updateTenant(
+                user.getId().toString(),
+                new UpdateTenantRequest(null, null, "900-123", null, null, null, null)))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("INVALID_TAX_ID");
+
+        assertThatThrownBy(() -> service.updateTenant(
+                user.getId().toString(),
+                new UpdateTenantRequest(null, null, null, null, "inventado", null, null)))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("INVALID_TAX_REGIME");
+
+        assertThatThrownBy(() -> service.updateTenant(
+                user.getId().toString(),
+                new UpdateTenantRequest(null, null, null, null, null, null, "prefijo-largo!")))
+                .isInstanceOf(DomainException.class)
+                .extracting(exception -> ((DomainException) exception).getCode())
+                .isEqualTo("INVALID_INVOICE_PREFIX");
     }
 
     @Test

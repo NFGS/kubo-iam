@@ -495,6 +495,10 @@ public class AuthService {
     /** Paquetes de configuracion que el ERP sabe aplicar (contrato ADR-0013). */
     private static final Set<String> VERTICALES = Set.of("retail", "servicios", "restaurantes", "agro");
 
+    /** Regimenes tributarios que acepta la facturacion electronica. */
+    private static final Set<String> REGIMENES =
+            Set.of("RESPONSABLE_IVA", "NO_RESPONSABLE_IVA", "SIMPLE");
+
     public TenantResponse currentTenant(String actorId) {
         User actor = users.findById(parseUuid(actorId, "USER_NOT_FOUND"))
                 .orElseThrow(() -> DomainException.notFound("USER_NOT_FOUND", "Usuario no encontrado"));
@@ -522,6 +526,44 @@ public class AuthService {
                 throw DomainException.badRequest("INVALID_VERTICAL", "El vertical indicado no es valido");
             }
             tenant.setVertical(vertical);
+        }
+
+        // Datos fiscales (DIAN): el DV del NIT se calcula aqui para que quede
+        // consistente sin que el negocio tenga que conocerlo.
+        if (request.taxId() != null && !request.taxId().isBlank()) {
+            String taxId = request.taxId().trim();
+            String dv = NitDv.calcular(taxId);
+            if (dv == null) {
+                throw DomainException.badRequest("INVALID_TAX_ID", "El NIT debe ser numerico");
+            }
+            tenant.setTaxId(taxId);
+            tenant.setTaxIdDv(dv);
+        }
+
+        if (request.fiscalAddress() != null && !request.fiscalAddress().isBlank()) {
+            tenant.setFiscalAddress(request.fiscalAddress().trim());
+        }
+
+        if (request.taxRegime() != null && !request.taxRegime().isBlank()) {
+            String regimen = request.taxRegime().trim().toUpperCase(Locale.ROOT);
+            if (!REGIMENES.contains(regimen)) {
+                throw DomainException.badRequest(
+                        "INVALID_TAX_REGIME", "El regimen tributario indicado no es valido");
+            }
+            tenant.setTaxRegime(regimen);
+        }
+
+        if (request.invoiceResolution() != null && !request.invoiceResolution().isBlank()) {
+            tenant.setInvoiceResolution(request.invoiceResolution().trim());
+        }
+
+        if (request.invoicePrefix() != null && !request.invoicePrefix().isBlank()) {
+            String prefijo = request.invoicePrefix().trim().toUpperCase(Locale.ROOT);
+            if (!prefijo.matches("[A-Z0-9]{1,6}")) {
+                throw DomainException.badRequest(
+                        "INVALID_INVOICE_PREFIX", "El prefijo debe ser alfanumerico de 1 a 6 caracteres");
+            }
+            tenant.setInvoicePrefix(prefijo);
         }
 
         tenants.save(tenant);
@@ -554,7 +596,13 @@ public class AuthService {
                 plan.maxUsers(),
                 plan.maxWarehouses(),
                 users.countByTenantIdAndStatus(tenant.getId(), UserStatus.ACTIVE),
-                tenant.getPlanRenewsAt() == null ? null : tenant.getPlanRenewsAt().toString());
+                tenant.getPlanRenewsAt() == null ? null : tenant.getPlanRenewsAt().toString(),
+                tenant.getTaxId(),
+                tenant.getTaxIdDv(),
+                tenant.getFiscalAddress(),
+                tenant.getTaxRegime(),
+                tenant.getInvoiceResolution(),
+                tenant.getInvoicePrefix());
     }
 
     /** Catalogo de planes para la interfaz (ADR-0021). */
