@@ -1,5 +1,7 @@
 # kubo-iam
 
+> Parte del proyecto **Kubo** — [kubo-workspace](https://github.com/NFGS/kubo-workspace) (ERP + CRM autoalojable para PYMES).
+
 Servicio de identidad, tenants, roles y auditoría de Kubo.
 
 | Campo | Valor |
