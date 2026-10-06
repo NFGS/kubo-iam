@@ -1,5 +1,7 @@
 # kubo-iam
 
+[![CI](https://github.com/NFGS/kubo-iam/actions/workflows/ci.yml/badge.svg)](https://github.com/NFGS/kubo-iam/actions/workflows/ci.yml)
+
 > Parte del proyecto **Kubo** — [kubo-workspace](https://github.com/NFGS/kubo-workspace) (ERP + CRM autoalojable para PYMES).
 
 Servicio de identidad, tenants, roles y auditoría de Kubo.
